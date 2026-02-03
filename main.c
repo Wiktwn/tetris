@@ -1,14 +1,18 @@
 #include <ncurses.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <time.h>
+
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 typedef struct {
   uint16_t id;
   uint16_t rotation;
-  uint32_t x;
-  uint32_t y;
+  int32_t x;
+  int32_t y;
 } Tetramino;
 
 enum Tetramino_id {
@@ -72,6 +76,82 @@ uint16_t tetramino_shapes[4 * 7] = {
   0b0100110010000000
 };
 
+uint16_t tetramino_xconstraints[4 * 7 * 2] = {
+  // Line
+  0, 4,
+  2, 1,
+  0, 4,
+  1, 1,
+  // L - Inverse
+  0, 3,
+  1, 2,
+  0, 3,
+  0, 2,
+  // L
+  0, 3,
+  1, 2,
+  0, 3,
+  0, 2,
+  // Square
+  1, 2,
+  1, 2,
+  1, 2,
+  1, 2,
+  // Z - Inverse
+  0, 3,
+  1, 2,
+  0, 3,
+  0, 2,
+  // T
+  0, 3,
+  1, 2,
+  0, 3,
+  0, 2,
+  // Z
+  0, 3,
+  1, 2,
+  0, 3,
+  0, 2
+};
+
+uint16_t tetramino_yconstraints[4 * 7 * 2] = {
+  // Line
+  1, 1,
+  0, 4,
+  2, 1,
+  0, 4,
+  // L - Inverse
+  0, 2,
+  0, 3,
+  1, 2,
+  0, 3,
+  // L
+  0, 2,
+  0, 3,
+  1, 2,
+  0, 3,
+  // Square
+  0, 2,
+  0, 2,
+  0, 2,
+  0, 2,
+  // Z - Inverse
+  0, 2,
+  0, 3,
+  1, 2,
+  0, 3,
+  // T
+  0, 2,
+  0, 3,
+  1, 2,
+  0, 3,
+  // Z
+  0, 2,
+  0, 3,
+  1, 2,
+  0, 3
+};
+
 char screen[screen_real_width * screen_height];
 static const char screen_bar[screen_real_width + 1] = "====================";
 static const uint32_t num_rows = screen_height + 2;
@@ -83,13 +163,13 @@ void screenInit() {
 }
 
 void screenPrint() {
-  printf("[>%s<]\n", screen_bar);
+  printf("[>%s<]\n\r", screen_bar);
   
   for (uint32_t i = 0; i < screen_height; i++) {
-    printf("[>%.*s<]\n", screen_real_width, screen + (screen_real_width * i));
+    printf("[>%.*s<]\n\r", screen_real_width, screen + (screen_real_width * i));
   }
 
-  printf("[>%s<]\n", screen_bar);
+  printf("[>%s<]\n\r", screen_bar);
 }
 
 void screenSetAt(uint32_t x, uint32_t y, char c) {
@@ -102,6 +182,14 @@ char screenGetAt(uint32_t x, uint32_t y) {
 
 uint16_t tetraminoGetShape(Tetramino *tet) {
   return tetramino_shapes[(tet->id * 4) + tet->rotation];
+}
+
+uint16_t* tetraminoGetXBounds(Tetramino *tet) {
+  return &tetramino_xconstraints[(tet->id * 4 * 2) + (tet->rotation * 2)];
+}
+
+uint16_t* tetraminoGetYBounds(Tetramino *tet) {
+  return &tetramino_yconstraints[(tet->id * 4 * 2) + (tet->rotation * 2)];
 }
 
 void tetraminoDraw(Tetramino *tet, const char* px) {
@@ -149,15 +237,113 @@ uint32_t tetraminoIsColliding(Tetramino *tet) {
   return 0;
 }
 
+struct {
+  char keys[50]; // no way more than 50 characters are entered at once.
+  uint16_t length;
+} input;
+
+struct {
+  int16_t rotation_offset; // number of times to rotate
+  uint16_t drop_offset;    // number of squares to drop per frame
+  int16_t x_offset;
+  uint16_t quit;
+} actions;
+
+const int16_t rotation_absolute_max = 1;
+const uint16_t drop_max = 1; // no support for multiple drops per frame currently
+const int16_t x_absolute_max = 1;
+
+void inputReadAllKeys(void) {
+  // reset input
+  input.length = 0;
+
+  int c;
+  // grab characters until no more remain
+  while ((c = getch()) != ERR) {
+    input.keys[input.length] = (char)c;
+    input.length++;
+  }
+}
+
+void tetraminoConstrainToScreen(Tetramino *tet) {
+  uint16_t *x_bounds = tetraminoGetXBounds(tet);
+  uint16_t *y_bounds = tetraminoGetYBounds(tet);
+  
+  tet->x = MAX(x_bounds[0], MIN(tet->x, screen_width  - x_bounds[1] - x_bounds[0]));
+  tet->y = MAX(y_bounds[0], MIN(tet->y, screen_height - y_bounds[1] - y_bounds[0]));
+}
+
+void inputProcessAllKeys(void) {
+  actions.rotation_offset = 0;
+  actions.drop_offset = 0;
+  actions.x_offset = 0;
+
+  for (uint16_t i = 0; i < input.length; i++) {
+    switch (input.keys[i]) {
+      case ',': // '<'
+        actions.rotation_offset += -1;
+        break;
+        
+      case '.': // '>'
+        actions.rotation_offset +=  1;
+        break;
+        
+      case 's':
+      case ' ':
+        actions.drop_offset++;
+        break;
+
+      case 'a':
+        actions.x_offset += -1;
+        break;
+      case 'd':
+        actions.x_offset +=  1;
+        break;
+
+      case 'q':
+        actions.quit = 1;
+        return;
+    }
+  }
+
+  if (abs(actions.rotation_offset) > rotation_absolute_max) {
+    int16_t sign = (actions.rotation_offset >= 0) ? 1 : -1;
+    actions.rotation_offset = rotation_absolute_max * sign;
+  }
+
+  if (actions.drop_offset > drop_max) {
+    actions.drop_offset = drop_max;
+  }
+
+  if (abs(actions.x_offset) > x_absolute_max) {
+    int16_t sign = (actions.x_offset >= 0) ? 1 : -1;
+    actions.x_offset = x_absolute_max * sign;
+  }
+}
+
+void tetraminoApplyActions(Tetramino *tet) {
+  if (actions.rotation_offset >= 0) {
+    tet->rotation += (uint16_t)actions.rotation_offset;
+  } else {
+    tet->rotation += abs(actions.rotation_offset) * 3;
+  }
+
+  tet->rotation = tet->rotation % 4;
+  tet->y += actions.drop_offset;
+  tet->x = MAX(0, (int16_t)tet->x + actions.x_offset);
+
+  tetraminoConstrainToScreen(tet);
+}
+
 int main(void) {
   Tetramino tet = (Tetramino){ZED_INVERSE, DEG_180, 0, 0};
-
   // initialize ncurses
   initscr();
 
-  // disable buffering and echoing of user input. Does not effect control characters
-  cbreak();
-  noecho();
+  cbreak(); // disable newline buffering
+  noecho(); // disables echoing of stdin
+  nodelay(stdscr, TRUE); // makes checking input nonblocking, gets ERR if no avaliable input
+  curs_set(0); // hide cursor
   
   // initialize all characters to whitespace
   screenInit();
@@ -166,31 +352,35 @@ int main(void) {
   while (1) {
     clock_t time_start, time_end;
     time_start = clock();
+
+    inputReadAllKeys();
+    inputProcessAllKeys();
+
+    if (actions.quit) break;
     
     // erase previous tetramino from screen
-    tetraminoDraw(&tet, px_eraser
-              );
+    tetraminoDraw(&tet, px_eraser);
+
+    tetraminoApplyActions(&tet);
 
     // update background data
-    tet.y++;
+    // tet.y++;
     
-    if (tetraminoIsColliding(&tet)) {
-      tet.y--;
-      tetraminoDraw(&tet, px_box
-                );
+    // if (tetraminoIsColliding(&tet)) {
+    //   tet.y--;
+    //   tetraminoDraw(&tet, px_box);
       
-      tet.x = 0;
-      tet.y = 0;
-    }
+    //   tet.x = 0;
+    //   tet.y = 0;
+    // }
 
-    tetraminoDraw(&tet, px_box
-              );
+    tetraminoDraw(&tet, px_box);
     
     // display new screen
     screenPrint();
 
     // reset cursor
-    printf("\r\033[%uA", num_rows);
+    printf("\r\033[%uA", num_rows + 1);
 
     time_end = clock();
 
@@ -198,10 +388,11 @@ int main(void) {
     time_elapsed /= CLOCKS_PER_SEC;
 
     // sleep for ~66 ms (15 fps)
-    usleep((250.0f - time_elapsed) * 1000);
+    usleep((66.6f - time_elapsed) * 1000);
   }
 
-  // clean up ncurses
+  // clean up ncurses and reset terminal
+  curs_set(1);
   endwin();
     
   return 0;
