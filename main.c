@@ -8,6 +8,7 @@
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define INRANGE(low, n, high) ((low <= n) && (n < high))
 #define NANOSECONDS_PER_SECOND 1000000000
 
 typedef struct {
@@ -199,7 +200,10 @@ void tetraminoDraw(Tetramino *tet, const char* px) {
 
   for (uint32_t i = 0; i < 4; i++) {
     for (uint32_t j = 0; j < 4; j++) {
-      if (shape & (0x8000 >> (4 * i + j) )) {
+      if (!INRANGE(0, (int32_t)(i + tet->y), screen_height) || !INRANGE(0, (int32_t)(j + tet->x), screen_width))
+        continue;
+      
+      if (shape & (0x8000 >> (4 * i + j))) { // check if shape section is opaque
         uint32_t real_x = (tet->x + j) * screen_pixel_width;
         
         screenSetAt(real_x,     tet->y + i, px[0]);
@@ -221,6 +225,9 @@ uint32_t tetraminoIsColliding(Tetramino *tet) {
 
   for (uint32_t i = 0; i < 4; i++) {
     for (uint32_t j = 0; j < 4; j++) {
+      if (!INRANGE(0, (int32_t)(i + tet->y), screen_height) || !INRANGE(0, (int32_t)(j + tet->x), screen_width))
+        continue;
+      
       if (shape & (0x8000 >> (4 * i + j) )) {
         uint32_t real_x = (tet->x + j) * screen_pixel_width;
         uint32_t real_y =  tet->y + i;
@@ -269,11 +276,11 @@ void tetraminoConstrainToScreen(Tetramino *tet) {
   int16_t *x_bounds = tetraminoGetXBounds(tet);
   int16_t *y_bounds = tetraminoGetYBounds(tet);
   
-  tet->x = MAX(-x_bounds[0], MIN(tet->x, screen_width - x_bounds[1] - x_bounds[0]));
-  tet->y = MAX(y_bounds[0], MIN(tet->y, screen_height - y_bounds[1] - y_bounds[0]));
+  tet->x = MAX(-x_bounds[0], MIN(tet->x, screen_width  - x_bounds[1] - x_bounds[0]));
+  tet->y =                   MIN(tet->y, screen_height - y_bounds[1] - y_bounds[0]);
 
   // printf("x=%i\n", tet->x);
-  screenGetAt(tet->x + x_bounds[0], tet->y);
+  // screenGetAt(tet->x + x_bounds[0], tet->y);
 }
 
 void inputProcessAllKeys(void) {
@@ -376,7 +383,7 @@ void tetraminoApplyActions(Tetramino *tet) {
     tetraminoDraw(&previous_state, px_box);
 
     // reset
-    tet->y = 0;
+    tet->y = -4;
     tet->x = 0;
   }
 
@@ -397,7 +404,7 @@ double timespecDifference(const struct timespec *t1, const struct timespec *t0) 
 }
 
 int main(void) { 
-  Tetramino tet = (Tetramino){ZED_INVERSE, DEG_90, 0, 0};
+  Tetramino tet = (Tetramino){ZED_INVERSE, DEG_90, 0, -4};
   double force_drop_interval = 1.0f; // seconds
   struct timespec timestamp_previous_drop, timestamp_now;
 
@@ -429,7 +436,6 @@ int main(void) {
       clock_gettime(CLOCK_MONOTONIC, &timestamp_previous_drop);
     } else {
       //check if we should force a drop
-
       clock_gettime(CLOCK_MONOTONIC, &timestamp_now);
       double time_passed = timespecDifference(&timestamp_now, &timestamp_previous_drop);
             
