@@ -2,17 +2,17 @@
 CC = gcc
 
 # common flags
-CFLAGS = -Wall
+CFLAGS = -Wall -Wextra
 
 # build specific flags
-CFLAGS_DEV = -Wextra
-CFLAGS_REL = -O3
+CFLAGS_DEV = -O0 -Wpointer-arith -Wshadow -Wfloat-equal -Werror
+CFLAGS_REL = -O2
 
 # Define the source files, object files, and executable name
-SOURCES = main.c
-OBJECTS = $(SOURCES:.c=.o)
-TARGET  = tetris
-LIBRARIES    = ncurses
+SOURCES   = main.c
+OBJECTS   = $(SOURCES:.c=.o)
+TARGET    = tetris
+LIBRARIES = ncurses
 
 .PHONY: all clean dev release
  
