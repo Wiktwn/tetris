@@ -418,7 +418,7 @@ void tetraminoGotoSpawn(Tetramino *tet) {
   int16_t *x_bounds = tetraminoGetXBounds(tet);
   // int16_t *y_bounds = tetraminoGetYBounds(tet);
 
-  tet->y = 0;
+  tet->y = -4;
   tet->x = (screen_width / 2) - x_bounds[0] - (x_bounds[1] / 2);
 }
 
