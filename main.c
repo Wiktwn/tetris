@@ -1,4 +1,6 @@
-#include <ncurses.h>
+#include <termios.h>
+#include <errno.h>
+// #include <ncurses.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -262,10 +264,13 @@ void inputReadAllKeys(void) {
   // reset input
   input.length = 0;
 
-  int c;
+  char c;
+  size_t nread;
+  
   // grab characters until no more remain
-  while ((c = getch()) != ERR) {
+  while ((nread = read(STDIN_FILENO, &c, 1)) == 1) {
     input.keys[input.length] = (char)c;
+    // printf("%c\n", c);
     input.length++;
   }
 }
@@ -507,26 +512,77 @@ void screenClearDropLines(void) {
   }
 }
 
+void fatalError(const char *str) {
+  perror(str);
+  exit(errno);
+}
 
+struct termios original_terminal;
+
+void Terminal_setRaw() {
+    struct termios raw;
+    tcgetattr(STDIN_FILENO, &raw);
+
+    // raw.c_iflag &= ~(IXON);   // disable XON / XOFF control flow
+    raw.c_iflag &= ~(ICRNL);  // disable automatic input translation
+    // raw.c_iflag &= ~(BRKINT); // disable break kill signal
+    raw.c_iflag &= ~(INPCK);  // disable parity checking
+    raw.c_iflag &= ~(ISTRIP); // disable stripping of 8th bit
+
+    // raw.c_oflag &= ~(OPOST);  // disable output pre-processing
+
+    raw.c_lflag &= ~(ECHO);   // disable character echoing
+    raw.c_lflag &= ~(ICANON); // disable cannonical mode
+    // raw.c_lflag &= ~(ISIG);   // disable interupt and kill signals
+    raw.c_lflag |= CS8;       // set the character size to 8
+
+    raw.c_cc[VMIN] = 0;       // set min chars read to 0; allows reading nothing
+    raw.c_cc[VTIME] = 1;      // set max wait time for read() to 0.1s
+
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw))
+        fatalError("terminal raw");
+}
+
+void Terminal_restore() {
+    // reset terminal to default config
+
+    write(STDOUT_FILENO, "\033[3J", 4);  
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_terminal))
+        fatalError("terminal restore");
+
+    // swap to original buffer
+    write(STDOUT_FILENO, "\033[?1049l\033[u", 11);
+    // show cursor
+    write(STDOUT_FILENO, "\033[?25h", 6);
+}
+
+void Tetris_initialize() {
+  tcgetattr(STDIN_FILENO, &original_terminal);
+
+  // save cursor position for exit
+  write(STDOUT_FILENO, "\033[s\033[B", 6);
+  // swap to alternate buffer
+  write(STDOUT_FILENO, "\033[?1049h", 8);
+  // hide cursor
+  write(STDOUT_FILENO, "\033[?25l", 6);
+  write(STDOUT_FILENO, "\033[H;", 4); // set cursor to start of terminal
+  Terminal_setRaw();
+}
 
 int main(void) { 
  Tetramino tet = (Tetramino){LINE, DEG_0, 0, 0};
   double force_drop_interval = 1.0f; // seconds
   struct timespec timestamp_previous_drop, timestamp_now;
 
+    
+  // initialize ncurses
+  atexit(Terminal_restore);
+  Tetris_initialize();
+
   clock_gettime(CLOCK_MONOTONIC, &timestamp_previous_drop);
 
-  // ensure new seed
-  srand(time(0));
-  
-  // initialize ncurses
-  initscr();
-
-  cbreak(); // disable newline buffering
-  noecho(); // disables echoing of stdin
-  nodelay(stdscr, TRUE); // makes checking input nonblocking, gets ERR if no avaliable input
-  curs_set(0); // hide cursor
-  
+  // ensure new rng seed
+  srand(time(0));  
   // initialize all characters to whitespace
   screenInit();
 
@@ -589,10 +645,8 @@ int main(void) {
   }
 
   // clean up ncurses and reset terminal
-  curs_set(1);
+  // curs_set(1);
 
-  endwin();
-  refresh();
-    
-  return 0;
-}
+  // endwin();
+  // refresh();
+  }

@@ -12,7 +12,7 @@ CFLAGS_REL = -O2
 SOURCES   = main.c
 OBJECTS   = $(SOURCES:.c=.o)
 TARGET    = tetris
-LIBRARIES = ncurses
+LIBRARIES =
 
 .PHONY: all clean dev release
  
@@ -29,7 +29,7 @@ release: $(TARGET)
 
 # Rule to link the executable
 $(TARGET): $(OBJECTS)
-	$(CC) $(OBJECTS) -o $(TARGET) -l $(LIBRARIES)
+	$(CC) $(OBJECTS) -o $(TARGET) $(LIBRARIES)
 	
 # Generic compilation rule
 %.o: %.c
