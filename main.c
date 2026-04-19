@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include <time.h>
 
+#include "term.h"
+
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define INRANGE(low, n, high) ((low <= n) && (n < high))
@@ -520,6 +522,7 @@ void fatalError(const char *str) {
 struct termios original_terminal;
 
 void Terminal_setRaw() {
+#ifdef __linux__
     struct termios raw;
     tcgetattr(STDIN_FILENO, &raw);
 
@@ -541,9 +544,15 @@ void Terminal_setRaw() {
 
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw))
         fatalError("terminal raw");
+#endif
+#if defined(_WIN32) || defined(_WIN64)
+  
+#endif
+
 }
 
 void Terminal_restore() {
+#ifdef __linux__
     // reset terminal to default config
 
     write(STDOUT_FILENO, "\033[3J", 4);  
@@ -554,9 +563,15 @@ void Terminal_restore() {
     write(STDOUT_FILENO, "\033[?1049l\033[u", 11);
     // show cursor
     write(STDOUT_FILENO, "\033[?25h", 6);
+#endif
+#if defined(_WIN32) || defined(_WIN64)
+  
+#endif
+
 }
 
 void Tetris_initialize() {
+#ifdef __linux__
   tcgetattr(STDIN_FILENO, &original_terminal);
 
   // save cursor position for exit
@@ -567,10 +582,14 @@ void Tetris_initialize() {
   write(STDOUT_FILENO, "\033[?25l", 6);
   write(STDOUT_FILENO, "\033[H;", 4); // set cursor to start of terminal
   Terminal_setRaw();
+#endif
+#if defined(_WIN32) || defined(_WIN64)
+  
+#endif
 }
 
 int main(void) { 
- Tetramino tet = (Tetramino){LINE, DEG_0, 0, 0};
+  Tetramino tet = (Tetramino){LINE, DEG_0, 0, 0};
   double force_drop_interval = 1.0f; // seconds
   struct timespec timestamp_previous_drop, timestamp_now;
 
