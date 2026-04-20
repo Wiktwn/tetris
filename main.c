@@ -160,7 +160,7 @@ int16_t tetramino_yconstraints[4 * 7 * 2] = {
 
 char screen[screen_real_width * screen_height];
 static const char screen_bar[screen_real_width + 1] = "====================";
-static const uint32_t num_rows = screen_height + 2;
+// static const uint32_t num_rows = screen_height + 2;
 
 void screenInit() {
   for (uint32_t i = 0; i < screen_real_width * screen_height; i++) {
@@ -551,18 +551,25 @@ void Terminal_setRaw() {
 
 }
 
+uint32_t restore_row = 1;
+uint32_t restore_col = 1;
+
 void Terminal_restore() {
 #ifdef __linux__
     // reset terminal to default config
-
-    write(STDOUT_FILENO, "\033[3J", 4);  
+    
+    // swap to original buffer
+    write(STDOUT_FILENO, "\033[?1049l", 8);
+    // show cursor
+    write(STDOUT_FILENO, "\033[?25h", 6);
+    // resposition cursor
+    char pos_str[32];
+    int len = snprintf(pos_str, 32, "\033[%d;%dH", restore_row, restore_col);
+    write(STDOUT_FILENO, pos_str, len);
+        
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_terminal))
         fatalError("terminal restore");
 
-    // swap to original buffer
-    write(STDOUT_FILENO, "\033[?1049l\033[u", 11);
-    // show cursor
-    write(STDOUT_FILENO, "\033[?25h", 6);
 #endif
 #if defined(_WIN32) || defined(_WIN64)
   
@@ -570,18 +577,38 @@ void Terminal_restore() {
 
 }
 
+void terminal_getCursorPosition() {
+  // fflush(stdin);
+  write(STDOUT_FILENO, "\033[6n", 4);
+  char buff[32];
+  int nchars = read(STDIN_FILENO, buff, 32);
+  buff[MIN(nchars, 31)] = '\0';
+
+  /*
+  for (int i = 0; i < 32; i++) {
+    char c = buff[i];
+    if (c == '\033') {
+      printf("ESC\n");
+    } else {
+      printf("%c\n", c);
+    }
+  }
+  */
+  
+  sscanf(buff, "%*c%*c%d;%dR", &restore_row, &restore_col);
+}
+
 void Tetris_initialize() {
 #ifdef __linux__
   tcgetattr(STDIN_FILENO, &original_terminal);
-
-  // save cursor position for exit
-  write(STDOUT_FILENO, "\033[s\033[B", 6);
+  
+  Terminal_setRaw();
+  terminal_getCursorPosition();
   // swap to alternate buffer
   write(STDOUT_FILENO, "\033[?1049h", 8);
   // hide cursor
   write(STDOUT_FILENO, "\033[?25l", 6);
-  write(STDOUT_FILENO, "\033[H;", 4); // set cursor to start of terminal
-  Terminal_setRaw();
+  write(STDOUT_FILENO, "\033[;H", 4); // set cursor to start of terminal
 #endif
 #if defined(_WIN32) || defined(_WIN64)
   
@@ -652,7 +679,8 @@ int main(void) {
     screenPrint();
 
     // reset cursor
-    printf("\r\033[%uA", num_rows);
+    // printf("\r\033[%uA", num_rows);
+    write(STDOUT_FILENO, "\033[;H", 4);
 
     time_end = clock();
 
@@ -662,10 +690,6 @@ int main(void) {
     // sleep for ~66 ms (15 fps)
     usleep((66.7f - time_elapsed) * 1000);
   }
-
-  // clean up ncurses and reset terminal
-  // curs_set(1);
-
-  // endwin();
-  // refresh();
-  }
+  
+  exit(0);
+}
