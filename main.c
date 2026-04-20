@@ -9,6 +9,13 @@
 
 #include "term.h"
 
+#if defined(_WIN32) || defined(_WIN64)
+#include <io.h>
+#define read _read
+#define write _write
+#define close _close
+#endif
+
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define INRANGE(low, n, high) ((low <= n) && (n < high))
