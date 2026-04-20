@@ -162,13 +162,13 @@ char screen[screen_real_width * screen_height];
 static const char screen_bar[screen_real_width + 1] = "====================";
 // static const uint32_t num_rows = screen_height + 2;
 
-void screenInit() {
+void Screen_Init() {
   for (uint32_t i = 0; i < screen_real_width * screen_height; i++) {
     screen[i] = ' ';
   }
 }
 
-void screenPrint() {
+void Screen_Print() {
   printf("[>%s<]\n\r", screen_bar);
   
   for (uint32_t i = 0; i < screen_height; i++) {
@@ -178,28 +178,28 @@ void screenPrint() {
   printf("[>%s<]\n\r", screen_bar);
 }
 
-void screenSetAt(uint32_t x, uint32_t y, char c) {
+void Screen_SetAt(uint32_t x, uint32_t y, char c) {
   screen[(y * screen_real_width) + x] = c;
 }
 
-char screenGetAt(uint32_t x, uint32_t y) {
+char Screen_GetAt(uint32_t x, uint32_t y) {
   return screen[(y * screen_real_width) + x];
 }
 
-uint16_t tetraminoGetShape(Tetramino *tet) {
+uint16_t Tetramino_GetShape(Tetramino *tet) {
   return tetramino_shapes[(tet->id * 4) + tet->rotation];
 }
 
-int16_t *tetraminoGetXBounds(Tetramino *tet) {
+int16_t *Tetramino_GetXBounds(Tetramino *tet) {
   return &tetramino_xconstraints[(tet->id * 4 * 2) + (tet->rotation * 2)];
 }
 
-int16_t *tetraminoGetYBounds(Tetramino *tet) {
+int16_t *Tetramino_GetYBounds(Tetramino *tet) {
   return &tetramino_yconstraints[(tet->id * 4 * 2) + (tet->rotation * 2)];
 }
 
-void tetraminoDraw(Tetramino *tet, const char* px) {
-  uint16_t shape = tetraminoGetShape(tet);
+void Tetramino_Draw(Tetramino *tet, const char* px) {
+  uint16_t shape = Tetramino_GetShape(tet);
 
   for (uint32_t i = 0; i < 4; i++) {
     for (uint32_t j = 0; j < 4; j++) {
@@ -209,8 +209,8 @@ void tetraminoDraw(Tetramino *tet, const char* px) {
       if (shape & (0x8000 >> (4 * i + j))) { // check if shape section is opaque
         uint32_t real_x = (tet->x + j) * screen_pixel_width;
         
-        screenSetAt(real_x,     tet->y + i, px[0]);
-        screenSetAt(real_x + 1, tet->y + i, px[1]);
+        Screen_SetAt(real_x,     tet->y + i, px[0]);
+        Screen_SetAt(real_x + 1, tet->y + i, px[1]);
       }
     }
   }
@@ -219,12 +219,12 @@ void tetraminoDraw(Tetramino *tet, const char* px) {
 const char px_box[2]    = {'[', ']'};
 const char px_eraser[2] = {' ', ' '};
 
-uint32_t screenFilledAt(uint32_t x, uint32_t y) {
-  return screenGetAt(x, y) != ' ';
+uint32_t Screen_FilledAt(uint32_t x, uint32_t y) {
+  return Screen_GetAt(x, y) != ' ';
 }
 
-uint32_t tetraminoIsColliding(Tetramino *tet) {
-  uint16_t shape = tetraminoGetShape(tet);
+uint32_t Tetramino_IsColliding(Tetramino *tet) {
+  uint16_t shape = Tetramino_GetShape(tet);
 
   for (uint32_t i = 0; i < 4; i++) {
     for (uint32_t j = 0; j < 4; j++) {
@@ -237,7 +237,7 @@ uint32_t tetraminoIsColliding(Tetramino *tet) {
         
         // printf("x=%i\n\r", tet->x);
         // segfault last call        
-        if (screenFilledAt(real_x, real_y)) return 1;
+        if (Screen_FilledAt(real_x, real_y)) return 1;
        }
     }
   }
@@ -277,15 +277,15 @@ void inputReadAllKeys(void) {
   }
 }
 
-void tetraminoConstrainToScreen(Tetramino *tet) {
-  int16_t *x_bounds = tetraminoGetXBounds(tet);
-  int16_t *y_bounds = tetraminoGetYBounds(tet);
+void Tetramino_ConstrainToScreen(Tetramino *tet) {
+  int16_t *x_bounds = Tetramino_GetXBounds(tet);
+  int16_t *y_bounds = Tetramino_GetYBounds(tet);
   
   tet->x = MAX(-x_bounds[0], MIN(tet->x, screen_width  - x_bounds[1] - x_bounds[0]));
   tet->y =                   MIN(tet->y, screen_height - y_bounds[1] - y_bounds[0]);
 
   // printf("x=%i\n", tet->x);
-  // screenGetAt(tet->x + x_bounds[0], tet->y);
+  // Screen_GetAt(tet->x + x_bounds[0], tet->y);
 }
 
 void inputProcessAllKeys(void) {
@@ -341,33 +341,33 @@ void inputProcessAllKeys(void) {
   }
 }
 
-uint32_t tetraminoHasLanded(Tetramino *tet) {
-  int16_t *y_bounds = tetraminoGetYBounds(tet);
+uint32_t Tetramino_HasLanded(Tetramino *tet) {
+  int16_t *y_bounds = Tetramino_GetYBounds(tet);
   return (tet->y + y_bounds[0] + y_bounds[1]) > screen_height;
 }
 
-void tetraminoAttemptLateralMove(Tetramino *tet) {
+void Tetramino_AttemptLateralMove(Tetramino *tet) {
   if (actions.x_offset == 0) return; // no movement laterally
 
   // apply hypothetical move
   int16_t px = tet->x;
 
   // constrain x
-  int16_t *x_bounds = tetraminoGetXBounds(tet);
+  int16_t *x_bounds = Tetramino_GetXBounds(tet);
   tet->x = MAX(-x_bounds[0], MIN(tet->x + actions.x_offset, screen_width - x_bounds[1] - x_bounds[0]));
 
   // test for collision after lateral movement
-  if (tetraminoIsColliding(tet)) {
+  if (Tetramino_IsColliding(tet)) {
     
     // revert changes
     tet->x = px;
   }
 }
 
-void tetraminoRandomize(Tetramino *tet);
-void tetraminoGotoSpawn(Tetramino *tet);
+void Tetramino_Randomize(Tetramino *tet);
+void Tetramino_GotoSpawn(Tetramino *tet);
 
-void tetraminoApplyActions(Tetramino *tet) {
+void Tetramino_ApplyActions(Tetramino *tet) {
   if (actions.rotation_offset >= 0) {
     tet->rotation += (uint16_t)actions.rotation_offset;
   } else {
@@ -388,48 +388,48 @@ void tetraminoApplyActions(Tetramino *tet) {
     while (1) {
       tet->y++;
 
-      if (tetraminoHasLanded(tet) || tetraminoIsColliding(tet)) {
+      if (Tetramino_HasLanded(tet) || Tetramino_IsColliding(tet)) {
         tet->y--;
         break;
       }
     }
 
     // leave a locked version of tet
-    tetraminoDraw(tet, px_box);
+    Tetramino_Draw(tet, px_box);
 
     // randomize and reset
-    tetraminoRandomize(tet);
-    tetraminoGotoSpawn(tet);
+    Tetramino_Randomize(tet);
+    Tetramino_GotoSpawn(tet);
     return;
   }
 
   tet->y += actions.drop_offset;
   
-  tetraminoAttemptLateralMove(tet);
+  Tetramino_AttemptLateralMove(tet);
   
-  if (tetraminoHasLanded(tet) || tetraminoIsColliding(tet)) {
+  if (Tetramino_HasLanded(tet) || Tetramino_IsColliding(tet)) {
     // tetramino has landed or is colliding vertically
     // -> tetramino needs to be locked and a new tetramino dropped
     
-    tetraminoDraw(&previous_state, px_box);
+    Tetramino_Draw(&previous_state, px_box);
     
     // reset
-    tetraminoRandomize(tet);
-    tetraminoGotoSpawn(tet);
+    Tetramino_Randomize(tet);
+    Tetramino_GotoSpawn(tet);
   }
 
-  tetraminoConstrainToScreen(tet);
+  Tetramino_ConstrainToScreen(tet);
 }
 
-void tetraminoGotoSpawn(Tetramino *tet) {
-  int16_t *x_bounds = tetraminoGetXBounds(tet);
-  // int16_t *y_bounds = tetraminoGetYBounds(tet);
+void Tetramino_GotoSpawn(Tetramino *tet) {
+  int16_t *x_bounds = Tetramino_GetXBounds(tet);
+  // int16_t *y_bounds = Tetramino_GetYBounds(tet);
 
   tet->y = -4;
   tet->x = (screen_width / 2) - x_bounds[0] - (x_bounds[1] / 2);
 }
 
-void tetraminoRandomize(Tetramino *tet) {
+void Tetramino_Randomize(Tetramino *tet) {
   tet->id = rand() % 7;
   tet->rotation = rand() % 4;
 }
@@ -449,67 +449,67 @@ double timespecDifference(const struct timespec *t1, const struct timespec *t0) 
 
 // functions for handling line clear, tetris, and possibly animations
 
-uint32_t screenShouldClearLine(uint32_t y) {
+uint32_t Screen_ShouldClearLine(uint32_t y) {
   // must be run before the falling tetramino is drawn to avoid incorrect line clears
   
   uint32_t j = 0;
   for (j = 0; j < screen_width; j++) {
-    if (!screenFilledAt(j * screen_pixel_width, y)) break;
+    if (!Screen_FilledAt(j * screen_pixel_width, y)) break;
   }
   
   return j >= screen_width;
 }
 
-uint32_t screenHasFilledLine(void) {
+uint32_t Screen_HasFilledLine(void) {
   // loop backwards cuz its more likely for lines to be filled at the bottom of the screen
   for (int32_t i = 0; i < screen_height; i++) {
-    if (screenShouldClearLine((uint32_t)i)) return 1;
+    if (Screen_ShouldClearLine((uint32_t)i)) return 1;
   }
 
   return 0;
 }
 
-void screenDropSection(uint32_t start_y, uint32_t section_height, uint32_t distance) {
+void Screen_DropSection(uint32_t start_y, uint32_t section_height, uint32_t distance) {
   for (uint32_t i = start_y; i < start_y + section_height; i++) {
     for (uint32_t j = 0; j < screen_real_width; j++) {
-      char c = screenGetAt(j, i);
+      char c = Screen_GetAt(j, i);
       
-      screenSetAt(j, i + distance, c); // set new
-      screenSetAt(j, i, ' '); // clear old
+      Screen_SetAt(j, i + distance, c); // set new
+      Screen_SetAt(j, i, ' '); // clear old
     }
   }
 }
 
-void screenDropAbove(uint32_t start_y) {
+void Screen_DropAbove(uint32_t start_y) {
   if (start_y == screen_height - 1)
     return;
   
   for (int32_t i = start_y; i >= 0; i--) {
     for (uint32_t j = 0; j < screen_real_width; j++) {
-      char c = screenGetAt(j, i);
+      char c = Screen_GetAt(j, i);
       
-      screenSetAt(j, i + 1, c); // set new
-      screenSetAt(j, i, ' '); // clear old
+      Screen_SetAt(j, i + 1, c); // set new
+      Screen_SetAt(j, i, ' '); // clear old
     }
   }
 }
 
-void screenClearLine(uint32_t y) {
+void Screen_ClearLine(uint32_t y) {
   for (uint32_t i = 0; i < screen_real_width; i++) {
-    screenSetAt(i, y, ' '); // clear cell
+    Screen_SetAt(i, y, ' '); // clear cell
   }
 }
 
-void screenClearDropLines(void) {
+void Screen_ClearDropLines(void) {
   // loop from the bottom of the screen upwards
   for (int32_t i = screen_height - 1; i >= 0; i--) {
-    if (screenShouldClearLine(i)) {
+    if (Screen_ShouldClearLine(i)) {
 
-      screenClearLine(i);
+      Screen_ClearLine(i);
       if (i == 0)
         continue;
       
-      screenDropAbove(i - 1);
+      Screen_DropAbove(i - 1);
     }
   }
 }
@@ -630,11 +630,11 @@ int main(void) {
   // ensure new rng seed
   srand(time(0));  
   // initialize all characters to whitespace
-  screenInit();
+  Screen_Init();
 
   // reset and randomize tetramino
-  tetraminoRandomize(&tet);
-  tetraminoGotoSpawn(&tet);
+  Tetramino_Randomize(&tet);
+  Tetramino_GotoSpawn(&tet);
   
   // main game loop
   while (1) {
@@ -647,7 +647,7 @@ int main(void) {
 
     if (actions.quit) break;
 
-    // TODO: move into tetraminoApplyActions()
+    // TODO: move into Tetramino_ApplyActions()
     if (actions.drop_offset != 0 && !actions.hard_drop) {
       // user dropped manually
       clock_gettime(CLOCK_MONOTONIC, &timestamp_previous_drop);
@@ -663,20 +663,20 @@ int main(void) {
     }
     
     // erase previous tetramino from screen
-    tetraminoDraw(&tet, px_eraser);
+    Tetramino_Draw(&tet, px_eraser);
 
     // apply user inputs
-    tetraminoApplyActions(&tet);
+    Tetramino_ApplyActions(&tet);
 
-    if (screenHasFilledLine()) {
-      screenClearDropLines();
+    if (Screen_HasFilledLine()) {
+      Screen_ClearDropLines();
     }
 
     // draw new tetramino with updated position
-    tetraminoDraw(&tet, px_box);
+    Tetramino_Draw(&tet, px_box);
     
     // display new screen
-    screenPrint();
+    Screen_Print();
 
     // reset cursor
     // printf("\r\033[%uA", num_rows);
