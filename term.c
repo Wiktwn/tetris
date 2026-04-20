@@ -15,6 +15,7 @@
 // Windows specific headers & definitions
 #if defined(_WIN32) || defined(_WIN64)
 #include <io.h>
+#include <conio.h>
 #include <windows.h>
 
 #define read _read
@@ -83,16 +84,17 @@ void Terminal_setRaw() {
   DWORD in_mode;
   GetConsoleMode(stdin_h, &in_mode);
 
-  in_mode &= ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT);
+  in_mode &= ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT);
 
   SetConsoleMode(stdin_h, in_mode);
+
 #endif
 }
 
 void Terminal_restore() {
 #if defined(__linux__)
+
     // reset terminal to default config
-    
     // swap to original buffer
     write(STDOUT_FILENO, "\033[?1049l", 8);
     // show cursor
@@ -107,10 +109,11 @@ void Terminal_restore() {
       exit(errno);
     }
 
-#endif
-#if defined(_WIN32) || defined(_WIN64)
+#elif defined(_WIN32) || defined(_WIN64)
+
   HANDLE stdin_h = GetStdHandle(STD_INPUT_HANDLE);
   SetConsoleMode(stdin_h, saved_state);
+
 #endif
 }
 
@@ -122,4 +125,33 @@ void Terminal_getCursorPosition() {
   
   buff[MIN(nchars, 31)] = '\0';
   sscanf(buff, "%*c%*c%d;%dR", &restore_row, &restore_col);
+}
+
+size_t Terminal_readAllInputs(char *buffer, size_t buffer_size) {
+#if defined(__linux__)
+  buffer_size++;
+  size_t nread;
+  char c;
+  size_t index = 0;
+  
+  while ((nread = read(STDIN_FILENO, &c, 1)) == 1) {
+    buffer[index] = c;
+    index++;
+  }
+
+  return index;
+
+#elif defined(_WIN32) || defined(_WIN64)
+
+  char c;
+  size_t index = 0;
+  while (_kbhit() && index < buffer_size) {
+    _read(STDIN_FILENO, &c, 1);
+    buffer[index] = c;
+    index++;
+  }
+
+  return index;
+
+#endif
 }

@@ -23,6 +23,7 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define INRANGE(low, n, high) ((low <= n) && (n < high))
 #define NANOSECONDS_PER_SECOND 1000000000
+#define INPUT_BUFFERSIZE 50
 
 typedef struct {
   uint16_t id;
@@ -256,8 +257,8 @@ uint32_t Tetramino_IsColliding(Tetramino *tet) {
 }
 
 struct {
-  char keys[50]; // no way more than 50 characters are entered at once.
-  uint16_t length;
+  char keys[INPUT_BUFFERSIZE]; // no way more than 50 characters are entered at once.
+  uint64_t length;
 } input;
 
 struct {
@@ -275,16 +276,21 @@ const int16_t x_absolute_max = 1;
 void inputReadAllKeys(void) {
   // reset input
   input.length = 0;
+  
+  size_t nread = Terminal_readAllInputs(input.keys, 50ull);
+  input.length = (uint64_t)nread;
+  
 
+  /*
   char c;
   size_t nread;
-  
   // grab characters until no more remain
   while ((nread = read(STDIN_FILENO, &c, 1)) == 1) {
-    input.keys[input.length] = (char)c;
+    input.keys[input.length] = c;
     // printf("%c\n", c);
     input.length++;
   }
+  */
 }
 
 void Tetramino_ConstrainToScreen(Tetramino *tet) {

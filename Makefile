@@ -35,7 +35,14 @@ $(TARGET): $(OBJECTS)
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+REMOVE_CMD = 
 
 # Rule to clean up generated files
+ifeq ($(OS),Windows_NT)
+	REMOVE_CMD := del
+else
+	REMOVE_CMD := rm -f
+endif
+
 clean:
-	rm -f $(OBJECTS) $(TARGET)
+	$(REMOVE_CMD) $(OBJECTS) $(TARGET)
