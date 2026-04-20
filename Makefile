@@ -9,7 +9,7 @@ CFLAGS_DEV = -O0 -Wpointer-arith -Wshadow -Wfloat-equal -Werror
 CFLAGS_REL = -O2
 
 # Define the source files, object files, and executable name
-SOURCES   = main.c
+SOURCES   = main.c term.c
 OBJECTS   = $(SOURCES:.c=.o)
 TARGET    = tetris
 LIBRARIES =

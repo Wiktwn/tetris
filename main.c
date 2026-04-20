@@ -1,19 +1,22 @@
-#include <termios.h>
 #include <errno.h>
-// #include <ncurses.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <time.h>
 
 #include "term.h"
 
-#if defined(_WIN32) || defined(_WIN64)
+#if defined(__linux__)
+
+#include <unistd.h>
+
+#elif defined(_WIN32) || defined(_WIN64)
+
 #include <io.h>
 #define read _read
 #define write _write
 #define close _close
+
 #endif
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -441,17 +444,31 @@ void Tetramino_Randomize(Tetramino *tet) {
   tet->rotation = rand() % 4;
 }
 
-double timespecDifference(const struct timespec *t1, const struct timespec *t0) {
-  time_t difference_seconds   = t1->tv_sec  - t0->tv_sec;
-  long difference_nanoseconds = t1->tv_nsec - t0->tv_nsec;
-
-  if (difference_nanoseconds < 0) {
-    // normalize values
-    difference_seconds--;
-    difference_nanoseconds += NANOSECONDS_PER_SECOND;
+struct timespec timespecDifference(const struct timespec *t1, const struct timespec *t0) {
+  struct timespec tmp;
+  
+  // Check if nanoseconds of end is less than start
+  if ((t1->tv_nsec - t0->tv_nsec) < 0) {
+    tmp.tv_sec = t1->tv_sec - t0->tv_sec - 1; // Borrow 1 second
+    tmp.tv_nsec = t1->tv_nsec - t0->tv_nsec + 1000000000L;
+  } else {
+    tmp.tv_sec = t1->tv_sec - t0->tv_sec;
+    tmp.tv_nsec = t1->tv_nsec - t0->tv_nsec;
   }
 
-  return (double)difference_seconds + ((double)difference_nanoseconds / NANOSECONDS_PER_SECOND);
+  return tmp;
+}
+
+
+int timespecGreaterThan(struct timespec t1, struct timespec t2) {
+    if (t1.tv_sec > t2.tv_sec) {
+        return 1;
+    }
+    if (t1.tv_sec == t2.tv_sec && t1.tv_nsec > t2.tv_nsec) {
+        return 1;
+    }
+    
+    return 0;
 }
 
 // functions for handling line clear, tetris, and possibly animations
@@ -526,105 +543,25 @@ void fatalError(const char *str) {
   exit(errno);
 }
 
-struct termios original_terminal;
-
-void Terminal_setRaw() {
-#ifdef __linux__
-    struct termios raw;
-    tcgetattr(STDIN_FILENO, &raw);
-
-    // raw.c_iflag &= ~(IXON);   // disable XON / XOFF control flow
-    raw.c_iflag &= ~(ICRNL);  // disable automatic input translation
-    // raw.c_iflag &= ~(BRKINT); // disable break kill signal
-    raw.c_iflag &= ~(INPCK);  // disable parity checking
-    raw.c_iflag &= ~(ISTRIP); // disable stripping of 8th bit
-
-    // raw.c_oflag &= ~(OPOST);  // disable output pre-processing
-
-    raw.c_lflag &= ~(ECHO);   // disable character echoing
-    raw.c_lflag &= ~(ICANON); // disable cannonical mode
-    // raw.c_lflag &= ~(ISIG);   // disable interupt and kill signals
-    raw.c_lflag |= CS8;       // set the character size to 8
-
-    raw.c_cc[VMIN] = 0;       // set min chars read to 0; allows reading nothing
-    raw.c_cc[VTIME] = 1;      // set max wait time for read() to 0.1s
-
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw))
-        fatalError("terminal raw");
-#endif
-#if defined(_WIN32) || defined(_WIN64)
-  
-#endif
-
-}
-
-uint32_t restore_row = 1;
-uint32_t restore_col = 1;
-
-void Terminal_restore() {
-#ifdef __linux__
-    // reset terminal to default config
-    
-    // swap to original buffer
-    write(STDOUT_FILENO, "\033[?1049l", 8);
-    // show cursor
-    write(STDOUT_FILENO, "\033[?25h", 6);
-    // resposition cursor
-    char pos_str[32];
-    int len = snprintf(pos_str, 32, "\033[%d;%dH", restore_row, restore_col);
-    write(STDOUT_FILENO, pos_str, len);
-        
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_terminal))
-        fatalError("terminal restore");
-
-#endif
-#if defined(_WIN32) || defined(_WIN64)
-  
-#endif
-
-}
-
-void terminal_getCursorPosition() {
-  // fflush(stdin);
-  write(STDOUT_FILENO, "\033[6n", 4);
-  char buff[32];
-  int nchars = read(STDIN_FILENO, buff, 32);
-  buff[MIN(nchars, 31)] = '\0';
-
-  /*
-  for (int i = 0; i < 32; i++) {
-    char c = buff[i];
-    if (c == '\033') {
-      printf("ESC\n");
-    } else {
-      printf("%c\n", c);
-    }
-  }
-  */
-  
-  sscanf(buff, "%*c%*c%d;%dR", &restore_row, &restore_col);
-}
-
 void Tetris_initialize() {
-#ifdef __linux__
-  tcgetattr(STDIN_FILENO, &original_terminal);
-  
+  Terminal_saveState();
   Terminal_setRaw();
-  terminal_getCursorPosition();
+  Terminal_getCursorPosition();
+  
   // swap to alternate buffer
   write(STDOUT_FILENO, "\033[?1049h", 8);
   // hide cursor
   write(STDOUT_FILENO, "\033[?25l", 6);
-  write(STDOUT_FILENO, "\033[;H", 4); // set cursor to start of terminal
-#endif
-#if defined(_WIN32) || defined(_WIN64)
-  
-#endif
+  // set cursor to start of terminal
+  write(STDOUT_FILENO, "\033[;H", 4);
 }
 
 int main(void) { 
   Tetramino tet = (Tetramino){LINE, DEG_0, 0, 0};
-  double force_drop_interval = 1.0f; // seconds
+  struct timespec force_drop_interval = {
+    1, // seconds
+    0  // nanoseconds
+  };
   struct timespec timestamp_previous_drop, timestamp_now;
 
     
@@ -645,8 +582,8 @@ int main(void) {
   
   // main game loop
   while (1) {
-    clock_t time_start, time_end;
-    time_start = clock();
+    struct timespec frame_start, frame_end;
+    clock_gettime(CLOCK_MONOTONIC, &frame_start);
 
     // read and process inputs into actions
     inputReadAllKeys();
@@ -661,9 +598,9 @@ int main(void) {
     } else {
       //check if we should force a drop
       clock_gettime(CLOCK_MONOTONIC, &timestamp_now);
-      double time_passed = timespecDifference(&timestamp_now, &timestamp_previous_drop);
+      struct timespec time_passed = timespecDifference(&timestamp_now, &timestamp_previous_drop);
             
-      if (time_passed > force_drop_interval) {
+      if (timespecGreaterThan(time_passed, force_drop_interval)) {
         actions.drop_offset = 1;
         clock_gettime(CLOCK_MONOTONIC, &timestamp_previous_drop);
       }
@@ -689,13 +626,13 @@ int main(void) {
     // printf("\r\033[%uA", num_rows);
     write(STDOUT_FILENO, "\033[;H", 4);
 
-    time_end = clock();
-
-    double time_elapsed = (double)(time_end - time_start);
-    time_elapsed /= CLOCKS_PER_SEC;
+    clock_gettime(CLOCK_MONOTONIC, &frame_end);
+    struct timespec frame_time = timespecDifference(&frame_end, &frame_start);
 
     // sleep for ~66 ms (15 fps)
-    usleep((66.7f - time_elapsed) * 1000);
+    struct timespec frame_total_duration = {0, 66666667};
+    struct timespec frame_remaining = timespecDifference(&frame_total_duration, &frame_time);
+    nanosleep(&frame_remaining, NULL);
   }
   
   exit(0);
