@@ -134,7 +134,7 @@ size_t Terminal_readAllInputs(char *buffer, size_t buffer_size) {
   char c;
   size_t index = 0;
   
-  while ((nread = read(STDIN_FILENO, &c, 1)) == 1) {
+  while ((nread = read(STDIN_FILENO, &c, 1)) == 1 && index < buffer_size) {
     buffer[index] = c;
     index++;
   }
