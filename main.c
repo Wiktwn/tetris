@@ -25,6 +25,9 @@
 #define NANOSECONDS_PER_SECOND 1000000000
 #define INPUT_BUFFERSIZE 50
 
+// uint32_t behavior_flags = 0;
+// #define USEBUCKET 1
+
 typedef struct {
   uint16_t id;
   uint16_t rotation;
@@ -34,12 +37,12 @@ typedef struct {
 
 enum Tetramino_id {
   LINE,
-  ELBOW_INVERSE,
-  ELBOW,
   SQUARE,
-  ZED_INVERSE,
   CROSS,
-  ZED
+  ELBOW,
+  ELBOW_INVERSE,
+  ZED,
+  ZED_INVERSE
 };
 
 enum Tetramino_rotation {
@@ -61,36 +64,36 @@ uint16_t tetramino_shapes[4 * 7] = {
   0b0010001000100010,
   0b0000000011110000,
   0b0100010001000100,
-  // L - inverse
-  0b1000111000000000,
-  0b0110010001000000,
-  0b0000111000100000,
-  0b0100010011000000,
-  // L
-  0b0010111000000000,
-  0b0100010001100000,
-  0b0000111010000000,
-  0b1100010001000000,
   // square
   0b0110011000000000,
   0b0110011000000000,
   0b0110011000000000,
   0b0110011000000000,
-  // Z - inverse
-  0b0110110000000000,
-  0b0100011000100000,
-  0b0000011011000000,
-  0b1000110001000000,
   // T
   0b0100111000000000,
   0b0100011001000000,
   0b0000111001000000,
   0b0100110001000000,
+  // L
+  0b0010111000000000,
+  0b0100010001100000,
+  0b0000111010000000,
+  0b1100010001000000,
+  // L - inverse
+  0b1000111000000000,
+  0b0110010001000000,
+  0b0000111000100000,
+  0b0100010011000000,
   // Z
   0b1100011000000000,
   0b0010011001000000,
   0b0000110001100000,
-  0b0100110010000000
+  0b0100110010000000,
+  // Z - inverse
+  0b0110110000000000,
+  0b0100011000100000,
+  0b0000011011000000,
+  0b1000110001000000
 };
 
 int16_t tetramino_xconstraints[4 * 7 * 2] = {
@@ -99,7 +102,12 @@ int16_t tetramino_xconstraints[4 * 7 * 2] = {
   2, 1,
   0, 4,
   1, 1,
-  // L - Inverse
+  // Square
+  1, 2,
+  1, 2,
+  1, 2,
+  1, 2,
+  // T
   0, 3,
   1, 2,
   0, 3,
@@ -109,22 +117,17 @@ int16_t tetramino_xconstraints[4 * 7 * 2] = {
   1, 2,
   0, 3,
   0, 2,
-  // Square
-  1, 2,
-  1, 2,
-  1, 2,
-  1, 2,
-  // Z - Inverse
-  0, 3,
-  1, 2,
-  0, 3,
-  0, 2,
-  // T
+  // L - Inverse
   0, 3,
   1, 2,
   0, 3,
   0, 2,
   // Z
+  0, 3,
+  1, 2,
+  0, 3,
+  0, 2,
+  // Z - Inverse
   0, 3,
   1, 2,
   0, 3,
@@ -137,7 +140,12 @@ int16_t tetramino_yconstraints[4 * 7 * 2] = {
   0, 4,
   2, 1,
   0, 4,
-  // L - Inverse
+  // Square
+  0, 2,
+  0, 2,
+  0, 2,
+  0, 2,
+  // T
   0, 2,
   0, 3,
   1, 2,
@@ -147,17 +155,7 @@ int16_t tetramino_yconstraints[4 * 7 * 2] = {
   0, 3,
   1, 2,
   0, 3,
-  // Square
-  0, 2,
-  0, 2,
-  0, 2,
-  0, 2,
-  // Z - Inverse
-  0, 2,
-  0, 3,
-  1, 2,
-  0, 3,
-  // T
+  // L - Inverse
   0, 2,
   0, 3,
   1, 2,
@@ -166,8 +164,36 @@ int16_t tetramino_yconstraints[4 * 7 * 2] = {
   0, 2,
   0, 3,
   1, 2,
+  0, 3,
+  // Z - Inverse
+  0, 2,
+  0, 3,
+  1, 2,
   0, 3
 };
+
+struct TetraminoShapeGroup {
+  uint16_t offset;
+  uint32_t nshapes;
+};
+
+struct TetraminoShapeGroup shape_groups[5];
+
+void Tetramino_initializeShapeGroups(void) {
+  enum GroupIds {
+    gLINE,
+    gSQUARE,
+    gCROSS,
+    gELBOW,
+    gZED
+  };
+    
+  shape_groups[gLINE]   = (struct TetraminoShapeGroup){0, 1};
+  shape_groups[gSQUARE] = (struct TetraminoShapeGroup){1, 1};
+  shape_groups[gCROSS]  = (struct TetraminoShapeGroup){2, 1};
+  shape_groups[gELBOW]  = (struct TetraminoShapeGroup){3, 2};
+  shape_groups[gZED]    = (struct TetraminoShapeGroup){5, 2};
+}
 
 char screen[screen_real_width * screen_height];
 static const char screen_bar[screen_real_width + 1] = "====================";
@@ -439,15 +465,25 @@ void Tetramino_ApplyActions(Tetramino *tet) {
 
 void Tetramino_GotoSpawn(Tetramino *tet) {
   int16_t *x_bounds = Tetramino_GetXBounds(tet);
-  // int16_t *y_bounds = Tetramino_GetYBounds(tet);
 
   tet->y = -4;
   tet->x = (screen_width / 2) - x_bounds[0] - (x_bounds[1] / 2);
 }
 
 void Tetramino_Randomize(Tetramino *tet) {
-  tet->id = rand() % 7;
-  tet->rotation = rand() % 4;
+  struct TetraminoShapeGroup group = shape_groups[rand() % 5];
+  
+  uint32_t shape = group.offset;
+  uint32_t varient = rand() % group.nshapes;
+  uint32_t rotation = rand() % 4;
+  
+  tet->id = shape + varient;
+  tet->rotation = rotation;
+}
+
+void Tetramino_respawn(Tetramino *tet) {
+  Tetramino_Randomize(tet);
+  Tetramino_GotoSpawn(tet);
 }
 
 struct timespec timespecDifference(const struct timespec *t1, const struct timespec *t0) {
@@ -562,14 +598,14 @@ void Tetris_initialize() {
   write(STDOUT_FILENO, "\033[;H", 4);
 }
 
-int main(void) { 
-  Tetramino tet = (Tetramino){LINE, DEG_0, 0, 0};
-  struct timespec force_drop_interval = {
-    1, // seconds
-    0  // nanoseconds
-  };
-  struct timespec timestamp_previous_drop, timestamp_now;
 
+
+int main(void) {
+  Tetramino_initializeShapeGroups();
+  
+  Tetramino tet = (Tetramino){LINE, DEG_0, 0, 0};
+  struct timespec force_drop_interval = {1, 0};
+  struct timespec timestamp_previous_drop, timestamp_now;
     
   // initialize ncurses
   atexit(Terminal_restore);
@@ -583,8 +619,7 @@ int main(void) {
   Screen_Init();
 
   // reset and randomize tetramino
-  Tetramino_Randomize(&tet);
-  Tetramino_GotoSpawn(&tet);
+  Tetramino_respawn(&tet);
   
   // main game loop
   while (1) {
