@@ -30,7 +30,7 @@
 #if defined(__linux__)
 #define TerminalIOState struct termios
 #elif defined(_WIN32) || defined(_WIN64)
-#define TerminalIOState DWORD
+#define TerminalIOState struct {DWORD STDIN_MODE; DWORD STDOUT_MODE;}
 #endif
 
 TerminalIOState saved_state;
@@ -45,9 +45,11 @@ void Terminal_saveState() {
   
 #elif defined(_WIN32) || defined(_WIN64)
   
-  HANDLE stdin_h = GetStdHandle(STD_INPUT_HANDLE);
-  GetConsoleMode(stdin_h, &saved_state);
-
+  HANDLE stdin_h  = GetStdHandle(STD_INPUT_HANDLE);
+  HANDLE stdout_h = GetStdHandle(STD_OUTPUT_HANDLE);
+  GetConsoleMode(stdin_h,  &saved_state.STDIN_MODE);
+  GetConsoleMode(stdout_h, &saved_state.STDOUT_MODE);
+  
 #endif
 }
 
@@ -80,11 +82,15 @@ void Terminal_setRaw() {
 
 #elif defined(_WIN32) || defined(_WIN64)
 
-  HANDLE stdin_h = GetStdHandle(STD_INPUT_HANDLE);
-  DWORD in_mode;
-  GetConsoleMode(stdin_h, &in_mode);
+  HANDLE stdin_h  = GetStdHandle(STD_INPUT_HANDLE);
+  HANDLE stdout_h = GetStdHandle(STD_OUTPUT_HANDLE);
+  DWORD in_mode, out_mode;
+  
+  GetConsoleMode(stdin_h,  &in_mode);
+  GetConsoleMode(stdout_h, &out_mode);
 
-  in_mode &= ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT);
+  in_mode  &= ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT);
+  out_mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
 
   SetConsoleMode(stdin_h, in_mode);
 
@@ -111,8 +117,10 @@ void Terminal_restore() {
 
 #elif defined(_WIN32) || defined(_WIN64)
 
-  HANDLE stdin_h = GetStdHandle(STD_INPUT_HANDLE);
-  SetConsoleMode(stdin_h, saved_state);
+  HANDLE stdin_h  = GetStdHandle(STD_INPUT_HANDLE);
+  HANDLE stdout_h = GetStdHandle(STD_INPUT_HANDLE);
+  SetConsoleMode(stdin_h,  saved_state.STDIN_MODE);
+  SetConsoleMode(stdout_h, saved_state.STDOUT_MODE);
 
 #endif
 }

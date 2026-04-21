@@ -305,18 +305,6 @@ void inputReadAllKeys(void) {
   
   size_t nread = Terminal_readAllInputs(input.keys, 50ull);
   input.length = (uint64_t)nread;
-  
-
-  /*
-  char c;
-  size_t nread;
-  // grab characters until no more remain
-  while ((nread = read(STDIN_FILENO, &c, 1)) == 1) {
-    input.keys[input.length] = c;
-    // printf("%c\n", c);
-    input.length++;
-  }
-  */
 }
 
 void Tetramino_ConstrainToScreen(Tetramino *tet) {
@@ -330,6 +318,25 @@ void Tetramino_ConstrainToScreen(Tetramino *tet) {
   // Screen_GetAt(tet->x + x_bounds[0], tet->y);
 }
 
+void inputProcessEscapeSequnce(uint16_t *i) {
+  char c;
+  sscanf(input.keys + (*i), "\033[%c", &c);
+
+  switch (c) {
+    case 'B': // Down Arrow
+      actions.drop_offset++;
+      break;
+    
+    case 'C': // Right Arrow
+      actions.x_offset++;
+      break;
+
+    case 'D': // Left Arrow
+      actions.x_offset--;
+      break;
+  }
+}
+
 void inputProcessAllKeys(void) {
   actions.rotation_offset = 0;
   actions.drop_offset = 0;
@@ -339,10 +346,12 @@ void inputProcessAllKeys(void) {
 
   for (uint16_t i = 0; i < input.length; i++) {
     switch (input.keys[i]) {
+      case 'n':
       case ',': // '<'
         actions.rotation_offset += -1;
         break;
-        
+
+      case 'm':
       case '.': // '>'
         actions.rotation_offset +=  1;
         break;
@@ -364,6 +373,10 @@ void inputProcessAllKeys(void) {
 
       case ' ': // hard drop
         actions.hard_drop = 1;
+        break;
+
+      case '\033':
+        inputProcessEscapeSequnce(&i);
         break;
     }
   }
