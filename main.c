@@ -217,6 +217,8 @@ struct TetraminoShapeGroup shape_groups[5];
 
 /*--- FUNCTIONS ---*/
 
+void ContextWindow_drawTetramino(Tetramino *tet);
+
 void Tetramino_initializeShapeGroups(void) {
   enum GroupIds {
     gLINE,
@@ -511,6 +513,8 @@ void Tetramino_randomize(Tetramino *tet) {
 void Tetramino_respawn(Tetramino *tet) {
   Tetramino_randomize(tet);
   Tetramino_gotoSpawn(tet);
+
+  ContextWindow_drawTetramino(tet);
 }
 
 struct timespec timespecDifference(const struct timespec *t1, const struct timespec *t0) {
@@ -628,23 +632,28 @@ void Tetris_initialize() {
 /*--- CONTEXT WINDOW ---*/
 
 struct ContextWindowElements {
-  size_t width;
-  char *bar;
-  char *blank;
-  char *divider;
+  const size_t width;
+  const char *bar;
+  const char *blank;
+  const char *divider;
 
-  size_t nl_size;
-  char *ansi_nl;
+  const size_t nl_size;
+  const char *ansi_nl;
+  
+  const uint32_t prev_col;
+  const uint32_t prev_row;
 };
 
 const struct ContextWindowElements CW_elems = {
-  .width   =  12,
-  .bar     = "[>========<]",
-  .blank   = "[>        <]",
-  .divider = "[>++++++++<]",
+  .width      =  12,
+  .bar        = "[>========<]",
+  .blank      = "[>        <]",
+  .divider    = "[>++++++++<]",
 
   .nl_size = 8,
   .ansi_nl = "\033[12D\033[B",
+  .prev_col = 27,
+  .prev_row = 9,
 };
 
 void ContextWindow_drawRow(const void *ptr, size_t nmemb) {
@@ -652,11 +661,47 @@ void ContextWindow_drawRow(const void *ptr, size_t nmemb) {
   fwrite(CW_elems.ansi_nl, 1, CW_elems.nl_size, stdout);
 }
 
-void ContextWindow_drawScore(void) {
+void ContextWindow_drawTetramino(Tetramino *tet) {
+  uint16_t shape = Tetramino_getShape(tet);
+  
+  /*
+  int16_t *x_bounds = Tetramino_getXBounds(tet);
+  int16_t *y_bounds = Tetramino_getYBounds(tet);
+  int16_t start_x = x_bounds[0];
+  int16_t start_y = y_bounds[0];
+  int16_t width_x = x_bounds[1];
+  int16_t width_y = y_bounds[1];
+  int16_t pad_left  = (4 - width_x) / 2;
+  int16_t pad_right = (4 - width_y) / 2;
+  */
+
+  printf("\033[%u;%uH", CW_elems.prev_row, CW_elems.prev_col);
+  
+  for (int32_t i = 0; i < 4; i++) {
+    for (int32_t j = 0; j < 4; j++) {
+      if (shape & (0x8000 >> (4 * i + j))) { // check if shape section is opaque
+        // draw box
+        fwrite(px_box, 1, 2, stdout);
+      } else {
+        // draw nothing
+        fwrite("  ", 1, 2, stdout);
+      }
+    }
+    
+    // goto next line
+    printf("\033[8D\033[B");
+  }
+  
+  fflush(stdout);
+}
+
+void ContextWindow_update(void) {
   printf("\033[1;%uH", screen_real_width + 4 + 1);
   ContextWindow_drawRow(CW_elems.bar, CW_elems.width);
 
   char row_buff[13];
+  ContextWindow_drawRow(CW_elems.blank, CW_elems.width);
+
   // draw score
   ContextWindow_drawRow("[> POINTS <]", CW_elems.width);
   snprintf(row_buff, 13, "[>-%06d-<]", Game_score);
@@ -669,31 +714,19 @@ void ContextWindow_drawScore(void) {
   // draw next piece preview
   ContextWindow_drawRow("[>  NEXT  <]", CW_elems.width);
   ContextWindow_drawRow(CW_elems.divider, CW_elems.width);
+  
+  // skip drawing over the tetramino area (25, 9)
   for (uint32_t i = 0; i < 4; i++) {
-    ContextWindow_drawRow(CW_elems.blank, CW_elems.width);
+    ContextWindow_drawRow("[>\033[8C<]", 8);
   }
+  
   ContextWindow_drawRow(CW_elems.divider, CW_elems.width);
 
-  for (uint32_t i = 0; i < 9; i++) ContextWindow_drawRow(CW_elems.blank, CW_elems.width);
-  
+  // finish off the "window"
+  for (uint32_t i = 0; i < 8; i++) ContextWindow_drawRow(CW_elems.blank, CW_elems.width);
   ContextWindow_drawRow(CW_elems.bar, CW_elems.width);
-}
 
-void ContextWindow_drawFuture(void) {
-  
-}
-
-void ContextWindow_update(void) {
-  uint16_t dflags = ContextWindow_drawFlags;
-  if (dflags & CONTEXTWINDOW_DRAWSCORE)
-    ContextWindow_drawScore();
-  if (dflags & CONTEXTWINDOW_DRAWSCORE)
-    ContextWindow_drawFuture();
-
-  if (ContextWindow_drawFlags)
-    fflush(stdout);
-  
-  ContextWindow_drawFlags = 0;
+  fflush(stdout);
 }
 
 int main(void) {
@@ -764,7 +797,6 @@ int main(void) {
     // reset cursor
     write(STDOUT_FILENO, "\033[;H", 4);
     Screen_print();
-    ContextWindow_drawFlags |= CONTEXTWINDOW_DRAWSCORE;
     ContextWindow_update();
 
     clock_gettime(CLOCK_MONOTONIC, &frame_end);
