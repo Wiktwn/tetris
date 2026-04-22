@@ -25,8 +25,7 @@
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define INRANGE(low, n, high) ((low <= n) && (n < high))
-#define NANOSECONDS_pER_SECOND 1000000000
-#define INPUT_bUFFERSIZE 50
+#define INPUT_BUFFERSIZE 50
 
 // i dont like this very much
 #define screen_width  10
@@ -40,7 +39,7 @@
 /*--- STRUCTURES ---*/
 
 struct InputData {
-  char keys[INPUT_bUFFERSIZE]; // no way more than 50 characters are entered at once.
+  char keys[INPUT_BUFFERSIZE]; // no way more than 50 characters are entered at once.
   uint64_t length;
 };
 
@@ -433,8 +432,7 @@ void Tetramino_attemptLateralMove(Tetramino *tet) {
   }
 }
 
-void Tetramino_randomize(Tetramino *tet);
-void Tetramino_gotoSpawn(Tetramino *tet);
+void Tetramino_respawn(Tetramino *tet);
 
 void Tetramino_applyActions(Tetramino *tet) {
   if (actions.rotation_offset >= 0) {
@@ -467,8 +465,7 @@ void Tetramino_applyActions(Tetramino *tet) {
     Tetramino_draw(tet, px_box);
 
     // randomize and reset
-    Tetramino_randomize(tet);
-    Tetramino_gotoSpawn(tet);
+    Tetramino_respawn(tet);
     return;
   }
 
@@ -483,8 +480,7 @@ void Tetramino_applyActions(Tetramino *tet) {
     Tetramino_draw(&previous_state, px_box);
     
     // reset
-    Tetramino_randomize(tet);
-    Tetramino_gotoSpawn(tet);
+    Tetramino_respawn(tet);
   }
 
   Tetramino_constrainToScreen(tet);
