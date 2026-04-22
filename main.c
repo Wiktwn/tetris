@@ -97,6 +97,7 @@ struct ActionData actions;
 struct InputData input;
 
 uint16_t ContextWindow_drawFlags = 0;
+uint32_t Game_score = 0;
 
 uint16_t tetramino_shapes[4 * 7] = {
   // line
@@ -626,13 +627,56 @@ void Tetris_initialize() {
 
 /*--- CONTEXT WINDOW ---*/
 
-const char *ctx_bar = "========>";
+struct ContextWindowElements {
+  size_t width;
+  char *bar;
+  char *blank;
+  char *divider;
+
+  size_t nl_size;
+  char *ansi_nl;
+};
+
+const struct ContextWindowElements CW_elems = {
+  .width   =  12,
+  .bar     = "[>========<]",
+  .blank   = "[>        <]",
+  .divider = "[>++++++++<]",
+
+  .nl_size = 8,
+  .ansi_nl = "\033[12D\033[B",
+};
+
+void ContextWindow_drawRow(const void *ptr, size_t nmemb) {
+  fwrite(ptr, 1, nmemb, stdout);
+  fwrite(CW_elems.ansi_nl, 1, CW_elems.nl_size, stdout);
+}
 
 void ContextWindow_drawScore(void) {
-  char buff[32];
-  size_t nbytes = snprintf(buff, 32, "\033[1;%uH", screen_real_width + 4 + 1);
-  write(STDOUT_FILENO, buff, nbytes);
-  printf("%s", ctx_bar);
+  printf("\033[1;%uH", screen_real_width + 4 + 1);
+  ContextWindow_drawRow(CW_elems.bar, CW_elems.width);
+
+  char row_buff[13];
+  // draw score
+  ContextWindow_drawRow("[> POINTS <]", CW_elems.width);
+  snprintf(row_buff, 13, "[>-%06d-<]", Game_score);
+  ContextWindow_drawRow(row_buff, CW_elems.width);
+
+  // blank space
+  ContextWindow_drawRow(CW_elems.blank, CW_elems.width);
+  ContextWindow_drawRow(CW_elems.blank, CW_elems.width);
+  
+  // draw next piece preview
+  ContextWindow_drawRow("[>  NEXT  <]", CW_elems.width);
+  ContextWindow_drawRow(CW_elems.divider, CW_elems.width);
+  for (uint32_t i = 0; i < 4; i++) {
+    ContextWindow_drawRow(CW_elems.blank, CW_elems.width);
+  }
+  ContextWindow_drawRow(CW_elems.divider, CW_elems.width);
+
+  for (uint32_t i = 0; i < 9; i++) ContextWindow_drawRow(CW_elems.blank, CW_elems.width);
+  
+  ContextWindow_drawRow(CW_elems.bar, CW_elems.width);
 }
 
 void ContextWindow_drawFuture(void) {
@@ -646,10 +690,16 @@ void ContextWindow_update(void) {
   if (dflags & CONTEXTWINDOW_DRAWSCORE)
     ContextWindow_drawFuture();
 
+  if (ContextWindow_drawFlags)
+    fflush(stdout);
+  
   ContextWindow_drawFlags = 0;
 }
 
 int main(void) {
+  // i dont wanna go through replacing every call to printf with fwrite or a custom function
+  setvbuf(stdout, NULL, _IOFBF, BUFSIZ);
+  
   Tetramino_initializeShapeGroups();
   
   Tetramino tet = (Tetramino){LINE, DEG_0, 0, 0};
@@ -716,7 +766,6 @@ int main(void) {
     Screen_print();
     ContextWindow_drawFlags |= CONTEXTWINDOW_DRAWSCORE;
     ContextWindow_update();
-    fflush(stdout);
 
     clock_gettime(CLOCK_MONOTONIC, &frame_end);
     struct timespec frame_time = timespecDifference(&frame_end, &frame_start);

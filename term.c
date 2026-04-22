@@ -30,7 +30,16 @@
 #if defined(__linux__)
 #define TerminalIOState struct termios
 #elif defined(_WIN32) || defined(_WIN64)
-#define TerminalIOState struct {DWORD STDIN_MODE; DWORD STDOUT_MODE;}
+#define TerminalIOState struct\
+{\
+  DWORD STDIN_MODE;\
+  DWORD STDOUT_MODE;\
+  \
+  SMALL_RECT saved_region;\
+  COORD buffer_size;\
+  COORD buffer_coord;\
+  CHAR_INFO *console_output;\
+}
 #endif
 
 TerminalIOState saved_state;
@@ -44,12 +53,13 @@ void Terminal_saveState() {
   tcgetattr(STDIN_FILENO, &saved_state);
   
 #elif defined(_WIN32) || defined(_WIN64)
-  
-  HANDLE stdin_h  = GetStdHandle(STD_INPUT_HANDLE);
-  HANDLE stdout_h = GetStdHandle(STD_OUTPUT_HANDLE);
+
+  // save terminal config
+  const HANDLE stdin_h  = GetStdHandle(STD_INPUT_HANDLE);
+  const HANDLE stdout_h = GetStdHandle(STD_OUTPUT_HANDLE);
   GetConsoleMode(stdin_h,  &saved_state.STDIN_MODE);
   GetConsoleMode(stdout_h, &saved_state.STDOUT_MODE);
-  
+
 #endif
 }
 
@@ -122,6 +132,8 @@ void Terminal_restore() {
   SetConsoleMode(stdin_h,  saved_state.STDIN_MODE);
   SetConsoleMode(stdout_h, saved_state.STDOUT_MODE);
 
+  // swap to og buffer
+  _write(STDOUT_FILENO, "\033[?1049l", 8);
 #endif
 }
 
