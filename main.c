@@ -33,8 +33,8 @@
 #define screen_pixel_width 2
 #define screen_real_width 20
 
-// uint32_t behavior_flags = 0;
-// #define USEBUCKET 1
+#define CONTEXTWINDOW_DRAWSCORE  0x0001
+#define CONTEXTWINDOW_DRAWFUTURE 0x0002
 
 /*--- STRUCTURES ---*/
 
@@ -95,6 +95,8 @@ const int16_t x_absolute_max = 1;
 struct TetraminoData tetramino;
 struct ActionData actions;
 struct InputData input;
+
+uint16_t ContextWindow_drawFlags = 0;
 
 uint16_t tetramino_shapes[4 * 7] = {
   // line
@@ -246,6 +248,7 @@ void Screen_print() {
   }
 
   printf("[>%s<]\n\r", screen_bar);
+  fflush(stdout);
 }
 
 void Screen_setAt(uint32_t x, uint32_t y, char c) {
@@ -621,7 +624,30 @@ void Tetris_initialize() {
   write(STDOUT_FILENO, "\033[;H", 4);
 }
 
+/*--- CONTEXT WINDOW ---*/
 
+const char *ctx_bar = "========>";
+
+void ContextWindow_drawScore(void) {
+  char buff[32];
+  size_t nbytes = snprintf(buff, 32, "\033[1;%uH", screen_real_width + 4 + 1);
+  write(STDOUT_FILENO, buff, nbytes);
+  printf("%s", ctx_bar);
+}
+
+void ContextWindow_drawFuture(void) {
+  
+}
+
+void ContextWindow_update(void) {
+  uint16_t dflags = ContextWindow_drawFlags;
+  if (dflags & CONTEXTWINDOW_DRAWSCORE)
+    ContextWindow_drawScore();
+  if (dflags & CONTEXTWINDOW_DRAWSCORE)
+    ContextWindow_drawFuture();
+
+  ContextWindow_drawFlags = 0;
+}
 
 int main(void) {
   Tetramino_initializeShapeGroups();
@@ -643,6 +669,7 @@ int main(void) {
 
   // reset and randomize tetramino
   Tetramino_respawn(&tet);
+  ContextWindow_drawFlags |= CONTEXTWINDOW_DRAWSCORE;
   
   // main game loop
   while (1) {
@@ -684,10 +711,12 @@ int main(void) {
     Tetramino_draw(&tet, px_box);
     
     // display new screen
-    Screen_print();
-
     // reset cursor
     write(STDOUT_FILENO, "\033[;H", 4);
+    Screen_print();
+    ContextWindow_drawFlags |= CONTEXTWINDOW_DRAWSCORE;
+    ContextWindow_update();
+    fflush(stdout);
 
     clock_gettime(CLOCK_MONOTONIC, &frame_end);
     struct timespec frame_time = timespecDifference(&frame_end, &frame_start);

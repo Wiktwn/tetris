@@ -25,7 +25,6 @@ dev: $(TARGET)
 # release rules
 release: CFLAGS += $(CFLAGS_REL)
 release: $(TARGET)
-	
 
 # Rule to link the executable
 $(TARGET): $(OBJECTS)
@@ -35,9 +34,8 @@ $(TARGET): $(OBJECTS)
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-REMOVE_CMD = 
-
 # Rule to clean up generated files
+REMOVE_CMD = 
 ifeq ($(OS),Windows_NT)
 	REMOVE_CMD := del
 else
