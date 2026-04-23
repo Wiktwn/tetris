@@ -5,8 +5,9 @@ CC = gcc
 CFLAGS = -Wall -Wextra
 
 # build specific flags
-CFLAGS_DEV = -O0 -Wpointer-arith -Wshadow -Wfloat-equal -Werror
-CFLAGS_REL = -O2
+CFLAGS_DEV   = -O0 -Wpointer-arith -Wshadow -Wfloat-equal -Werror
+CFLAGS_REL   = -O2
+CFLAGS_DEBUG = -g 
 
 # Define the source files, object files, and executable name
 SOURCES   = main.c term.c
@@ -16,7 +17,7 @@ LIBRARIES =
 
 .PHONY: all clean dev release
  
-all: dev release
+all: dev release debug
 
 # debug rules
 dev: CFLAGS += $(CFLAGS_DEV)
@@ -25,6 +26,10 @@ dev: $(TARGET)
 # release rules
 release: CFLAGS += $(CFLAGS_REL)
 release: $(TARGET)
+
+debug: CFLAGS += $(CFLAGS_DEBUG)
+debug: CFLAGS += $(CFLAGS_DEV)
+debug: $(TARGET)
 
 # Rule to link the executable
 $(TARGET): $(OBJECTS)

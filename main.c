@@ -1,6 +1,7 @@
 /*--- INCLUDES ---*/
 
 #include <errno.h>
+#include <locale.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -92,12 +93,16 @@ const int16_t rotation_absolute_max = 1;
 const uint16_t drop_max = 1; // no support for multiple drops per frame currently
 const int16_t x_absolute_max = 1;
 
-struct TetraminoData tetramino;
+// struct TetraminoData tetramino;
+struct TetraminoData tetramino_next = {LINE, DEG_0, 0, 0};
 struct ActionData actions;
 struct InputData input;
 
+struct timespec timestamp_previous_drop, timestamp_now;
+
 uint16_t ContextWindow_drawFlags = 0;
 uint32_t Game_score = 0;
+uint32_t Game_lines_cleared = 0;
 
 uint16_t tetramino_shapes[4 * 7] = {
   // line
@@ -472,6 +477,9 @@ void Tetramino_applyActions(Tetramino *tet) {
 
     // randomize and reset
     Tetramino_respawn(tet);
+
+    // update last dropped timestamp
+    clock_gettime(CLOCK_MONOTONIC, &timestamp_previous_drop);
     return;
   }
 
@@ -494,8 +502,17 @@ void Tetramino_applyActions(Tetramino *tet) {
 
 void Tetramino_gotoSpawn(Tetramino *tet) {
   int16_t *x_bounds = Tetramino_getXBounds(tet);
+  int16_t *y_bounds = Tetramino_getYBounds(tet);
 
-  tet->y = -4;
+  int16_t height = y_bounds[1];
+  int16_t top_y = y_bounds[0];
+
+  int16_t bottom_y = (top_y + height);
+  if (bottom_y > 4) {
+    fprintf(stderr, "how did we get here? %d\n", bottom_y);
+  }
+  
+  tet->y = -bottom_y;
   tet->x = (screen_width / 2) - x_bounds[0] - (x_bounds[1] / 2);
 }
 
@@ -504,17 +521,20 @@ void Tetramino_randomize(Tetramino *tet) {
   
   uint32_t shape = group.offset;
   uint32_t varient = rand() % group.nshapes;
-  uint32_t rotation = rand() % 4;
+  // uint32_t rotation = rand() % 4;
+  uint32_t rotation = DEG_0;
   
   tet->id = shape + varient;
   tet->rotation = rotation;
 }
 
 void Tetramino_respawn(Tetramino *tet) {
-  Tetramino_randomize(tet);
+  tet->id = tetramino_next.id;
+  tet->rotation = tetramino_next.rotation;
   Tetramino_gotoSpawn(tet);
 
-  ContextWindow_drawTetramino(tet);
+  Tetramino_randomize(&tetramino_next);
+  ContextWindow_drawTetramino(&tetramino_next);
 }
 
 struct timespec timespecDifference(const struct timespec *t1, const struct timespec *t0) {
@@ -597,17 +617,35 @@ void Screen_clearLine(uint32_t y) {
   }
 }
 
+
+void Game_updateScore(uint32_t nlines) {
+  Game_lines_cleared += nlines;
+
+  uint32_t scores[4] = {40, 100, 300, 1200};
+  if (nlines == 0)
+    return;
+  Game_score += scores[MIN(nlines - 1, 3)];
+}
+
+
 void Screen_clearDropLines(void) {
   // loop from the bottom of the screen upwards
   for (int32_t i = screen_height - 1; i >= 0; i--) {
-    if (Screen_shouldClearLine(i)) {
 
+    // needs to be a while loop because consecutive line clears will be put into the current row
+    uint32_t nlines = 0;
+    while (Screen_shouldClearLine(i)) {
+      
       Screen_clearLine(i);
       if (i == 0)
         continue;
       
       Screen_dropAbove(i - 1);
+      nlines++;
     }
+
+    
+    Game_updateScore(nlines);    
   }
 }
 
@@ -663,7 +701,7 @@ void ContextWindow_drawRow(const void *ptr, size_t nmemb) {
 
 void ContextWindow_drawTetramino(Tetramino *tet) {
   uint16_t shape = Tetramino_getShape(tet);
-  
+
   /*
   int16_t *x_bounds = Tetramino_getXBounds(tet);
   int16_t *y_bounds = Tetramino_getYBounds(tet);
@@ -671,10 +709,11 @@ void ContextWindow_drawTetramino(Tetramino *tet) {
   int16_t start_y = y_bounds[0];
   int16_t width_x = x_bounds[1];
   int16_t width_y = y_bounds[1];
-  int16_t pad_left  = (4 - width_x) / 2;
-  int16_t pad_right = (4 - width_y) / 2;
-  */
 
+  int16_t center_x = (width_x / 2) + start_x;
+  int16_t center_y = (width_y / 2) + start_y;
+  */
+  
   printf("\033[%u;%uH", CW_elems.prev_row, CW_elems.prev_col);
   
   for (int32_t i = 0; i < 4; i++) {
@@ -707,8 +746,10 @@ void ContextWindow_update(void) {
   snprintf(row_buff, 13, "[>-%06d-<]", Game_score);
   ContextWindow_drawRow(row_buff, CW_elems.width);
 
-  // blank space
-  ContextWindow_drawRow(CW_elems.blank, CW_elems.width);
+  // draw lines cleared
+  ContextWindow_drawRow("[> CLEARS <]", CW_elems.width);
+  snprintf(row_buff, 13, "[>-%06d-<]", Game_lines_cleared);
+  ContextWindow_drawRow(row_buff, CW_elems.width);
   ContextWindow_drawRow(CW_elems.blank, CW_elems.width);
   
   // draw next piece preview
@@ -723,7 +764,7 @@ void ContextWindow_update(void) {
   ContextWindow_drawRow(CW_elems.divider, CW_elems.width);
 
   // finish off the "window"
-  for (uint32_t i = 0; i < 8; i++) ContextWindow_drawRow(CW_elems.blank, CW_elems.width);
+  for (uint32_t i = 0; i < 7; i++) ContextWindow_drawRow(CW_elems.blank, CW_elems.width);
   ContextWindow_drawRow(CW_elems.bar, CW_elems.width);
 
   fflush(stdout);
@@ -736,8 +777,8 @@ int main(void) {
   Tetramino_initializeShapeGroups();
   
   Tetramino tet = (Tetramino){LINE, DEG_0, 0, 0};
+  
   struct timespec force_drop_interval = {1, 0};
-  struct timespec timestamp_previous_drop, timestamp_now;
     
   // initialize ncurses
   atexit(Terminal_restore);
@@ -751,7 +792,9 @@ int main(void) {
   Screen_init();
 
   // reset and randomize tetramino
+  Tetramino_randomize(&tetramino_next);
   Tetramino_respawn(&tet);
+  // Tetramino_randomize()
   ContextWindow_drawFlags |= CONTEXTWINDOW_DRAWSCORE;
   
   // main game loop
