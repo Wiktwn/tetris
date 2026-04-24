@@ -1,11 +1,12 @@
 /*--- INCLUDES ---*/
 
 #include <errno.h>
-#include <locale.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
+#include <cyaml/cyaml.h>
 #include "term.h"
 
 /*--- PREPROCESSOR MACROS ---*/
@@ -34,8 +35,7 @@
 #define screen_pixel_width 2
 #define screen_real_width 20
 
-#define CONTEXTWINDOW_DRAWSCORE  0x0001
-#define CONTEXTWINDOW_DRAWFUTURE 0x0002
+#define FLAGS_NOBUCKET 0x1
 
 /*--- STRUCTURES ---*/
 
@@ -81,13 +81,37 @@ struct TetraminoShapeGroup {
   uint32_t nshapes;
 };
 
+struct GameSaveData {
+  uint32_t highscore;
+  char    *highscore_name;
+};
+
+/*--- CYAML COFNIG ---*/
+
+static const cyaml_schema_field_t GameSaveData_fields_schema[] = {
+  CYAML_FIELD_UINT("highscore", CYAML_FLAG_DEFAULT, struct GameSaveData, highscore),
+  CYAML_FIELD_STRING_PTR("highscore_name", CYAML_FLAG_POINTER, struct GameSaveData, highscore_name, 0, CYAML_UNLIMITED),
+  CYAML_FIELD_END
+};
+
+static const cyaml_schema_value_t GameSaveData_schema = {
+  CYAML_VALUE_MAPPING(CYAML_FLAG_POINTER, struct GameSaveData, GameSaveData_fields_schema),
+};
+
+static const cyaml_config_t cyaml_config = {
+  .log_level = CYAML_LOG_WARNING,
+  .log_fn = cyaml_log,
+  .mem_fn = cyaml_mem,
+};
+
 /*--- DATA ---*/
 
+char save_path[128];
 char screen[screen_real_width * screen_height];
 
 static const char screen_bar[screen_real_width + 1] = "====================";
-const char px_box[2]    = {'[', ']'};
-const char px_eraser[2] = {' ', ' '};
+static const char px_box[2]    = {'[', ']'};
+static const char px_eraser[2] = {' ', ' '};
 
 const int16_t rotation_absolute_max = 1;
 const uint16_t drop_max = 1; // no support for multiple drops per frame currently
@@ -99,10 +123,12 @@ struct ActionData actions;
 struct InputData input;
 
 struct timespec timestamp_previous_drop, timestamp_now;
-
-uint16_t ContextWindow_drawFlags = 0;
+struct timespec force_drop_interval = {1, 0};
 uint32_t Game_score = 0;
 uint32_t Game_lines_cleared = 0;
+uint32_t Game_flags = 0;
+uint32_t Game_highscore = 0;
+char     Game_highscore_usr[9];
 
 uint16_t tetramino_shapes[4 * 7] = {
   // line
@@ -219,10 +245,15 @@ int16_t tetramino_yconstraints[4 * 7 * 2] = {
 };
 
 struct TetraminoShapeGroup shape_groups[5];
+uint32_t shape_groups_length = 0;
 
 /*--- FUNCTIONS ---*/
 
+int timespecGreaterThan(struct timespec t1, struct timespec t2);
+struct timespec timespecDifference(const struct timespec *t1, const struct timespec *t0);
 void ContextWindow_drawTetramino(Tetramino *tet);
+void Tetramino_randomizeShapeBucket(void);
+void Game_loadSave(void);
 
 void Tetramino_initializeShapeGroups(void) {
   enum GroupIds {
@@ -238,6 +269,11 @@ void Tetramino_initializeShapeGroups(void) {
   shape_groups[gCROSS]  = (struct TetraminoShapeGroup){2, 1};
   shape_groups[gELBOW]  = (struct TetraminoShapeGroup){3, 2};
   shape_groups[gZED]    = (struct TetraminoShapeGroup){5, 2};
+
+  if (!(Game_flags & FLAGS_NOBUCKET)) {
+    shape_groups_length = 5;
+    Tetramino_randomizeShapeBucket();
+  }
 }
 
 // static const uint32_t num_rows = screen_height + 2;
@@ -446,10 +482,26 @@ void Tetramino_attemptLateralMove(Tetramino *tet) {
 void Tetramino_respawn(Tetramino *tet);
 
 void Tetramino_applyActions(Tetramino *tet) {
+  // TODO: these rotations are not safe, make them safe retart!
   if (actions.rotation_offset >= 0) {
     tet->rotation += (uint16_t)actions.rotation_offset;
   } else {
     tet->rotation += abs(actions.rotation_offset) * 3;
+  }
+
+  // TODO: move into Tetramino_applyActions()
+  if (actions.drop_offset != 0 && !actions.hard_drop) {
+    // user dropped manually
+    clock_gettime(CLOCK_MONOTONIC, &timestamp_previous_drop);
+  } else {
+    //check if we should force a drop
+    clock_gettime(CLOCK_MONOTONIC, &timestamp_now);
+    struct timespec time_passed = timespecDifference(&timestamp_now, &timestamp_previous_drop);
+          
+    if (timespecGreaterThan(time_passed, force_drop_interval)) {
+      actions.drop_offset = 1;
+      clock_gettime(CLOCK_MONOTONIC, &timestamp_previous_drop);
+    }
   }
 
   // tet->id = (tet->id + actions.id_offset) % 7;
@@ -516,8 +568,32 @@ void Tetramino_gotoSpawn(Tetramino *tet) {
   tet->x = (screen_width / 2) - x_bounds[0] - (x_bounds[1] / 2);
 }
 
+void Tetramino_randomizeShapeBucket() {
+  // shape_groups_length = 5;
+  
+  for (size_t i = 4; i > 0; i--) {
+    size_t j = (size_t)((double)rand() / ((double)RAND_MAX + 1) * (i + 1));
+
+    struct TetraminoShapeGroup temp = shape_groups[j];
+    shape_groups[j] = shape_groups[i];
+    shape_groups[i] = temp;
+  }
+}
+
 void Tetramino_randomize(Tetramino *tet) {
-  struct TetraminoShapeGroup group = shape_groups[rand() % 5];
+  struct TetraminoShapeGroup group;
+  
+  if (!(Game_flags & FLAGS_NOBUCKET)) {
+    group = shape_groups[shape_groups_length - 1];
+    shape_groups_length--;
+    
+    if (shape_groups_length == 0) {
+      shape_groups_length = 5;
+      Tetramino_randomizeShapeBucket();
+    }
+  } else {
+    group = shape_groups[rand() % 5];
+  }
   
   uint32_t shape = group.offset;
   uint32_t varient = rand() % group.nshapes;
@@ -655,9 +731,14 @@ void fatalError(const char *str) {
 }
 
 void Tetris_initialize() {
+  snprintf(save_path, sizeof(save_path), "%s/.tetris/save.yaml", getenv("HOME"));
+  
   Terminal_saveState();
   Terminal_setRaw();
   Terminal_getCursorPosition();
+  Tetramino_initializeShapeGroups();
+
+  Game_loadSave();
   
   // swap to alternate buffer
   write(STDOUT_FILENO, "\033[?1049h", 8);
@@ -691,7 +772,7 @@ const struct ContextWindowElements CW_elems = {
   .nl_size = 8,
   .ansi_nl = "\033[12D\033[B",
   .prev_col = 27,
-  .prev_row = 9,
+  .prev_row = 10,
 };
 
 void ContextWindow_drawRow(const void *ptr, size_t nmemb) {
@@ -763,25 +844,85 @@ void ContextWindow_update(void) {
   
   ContextWindow_drawRow(CW_elems.divider, CW_elems.width);
 
+  // draw highscore info
+  ContextWindow_drawRow(CW_elems.blank, CW_elems.width);
+  ContextWindow_drawRow("[>TOPSCORE<]", CW_elems.width);
+  snprintf(row_buff, 13, "[>%8.8s<]", Game_highscore_usr);
+  ContextWindow_drawRow(row_buff, CW_elems.width);
+  snprintf(row_buff, 13, "[>-%06d-<]", Game_highscore);
+  ContextWindow_drawRow(row_buff, CW_elems.width);
+  
   // finish off the "window"
-  for (uint32_t i = 0; i < 7; i++) ContextWindow_drawRow(CW_elems.blank, CW_elems.width);
+  for (uint32_t i = 0; i < 3; i++) ContextWindow_drawRow(CW_elems.blank, CW_elems.width);
   ContextWindow_drawRow(CW_elems.bar, CW_elems.width);
 
   fflush(stdout);
 }
 
-int main(void) {
+void Game_setFlags(int argc, char *argv[]) {
+  char *valid_args[] = {
+    "--nobucket"
+  };
+
+  for (int i = 1; i < argc; i++) {
+    char *arg = argv[i];
+    
+    for (uint32_t j = 0; j < sizeof(valid_args) / sizeof(char *); j++) {
+      if (!strcmp(valid_args[j], arg))
+        continue;
+
+      Game_flags |= FLAGS_NOBUCKET;
+    }
+  }
+}
+
+void Game_exit(void) {
+  Terminal_restore();
+  
+  struct GameSaveData save = {
+    .highscore      = MAX(Game_score, Game_highscore),
+    .highscore_name = "Will",
+  };
+   
+  cyaml_err_t err = cyaml_save_file(save_path, &cyaml_config, &GameSaveData_schema, &save, 0);
+
+  if (err != CYAML_OK) {
+    fprintf(stderr, "Error writing save data: %s\n", cyaml_strerror(err));
+    exit(1);
+  }
+}
+
+void Game_loadSave(void) {
+  struct GameSaveData *save;
+
+  cyaml_err_t err = cyaml_load_file(save_path, &cyaml_config, &GameSaveData_schema, (cyaml_data_t **)(&save), NULL);
+
+  if (err != CYAML_OK) {
+    fprintf(stderr, "Error reading save data: %s\n", cyaml_strerror(err));
+    *save = (struct GameSaveData){0, "ERR"};
+    exit(1);
+  }
+
+  Game_highscore = save->highscore;
+  strncpy(Game_highscore_usr, save->highscore_name, 8);
+  Game_highscore_usr[sizeof(Game_highscore_usr) - 1] = '\0'; // ensure null terminator
+
+  err = cyaml_free(&cyaml_config, &GameSaveData_schema, save, 0);
+  if (err != CYAML_OK) {
+    fprintf(stderr, "Error freeing save data: %s\n", cyaml_strerror(err));
+  }
+}
+
+int main(int argc, char *argv[]) {
+  Game_setFlags(argc, argv);
+  
   // i dont wanna go through replacing every call to printf with fwrite or a custom function
   setvbuf(stdout, NULL, _IOFBF, BUFSIZ);
-  
-  Tetramino_initializeShapeGroups();
-  
+    
   Tetramino tet = (Tetramino){LINE, DEG_0, 0, 0};
-  
-  struct timespec force_drop_interval = {1, 0};
     
   // initialize ncurses
-  atexit(Terminal_restore);
+  atexit(Game_exit);
   Tetris_initialize();
 
   clock_gettime(CLOCK_MONOTONIC, &timestamp_previous_drop);
@@ -794,9 +935,7 @@ int main(void) {
   // reset and randomize tetramino
   Tetramino_randomize(&tetramino_next);
   Tetramino_respawn(&tet);
-  // Tetramino_randomize()
-  ContextWindow_drawFlags |= CONTEXTWINDOW_DRAWSCORE;
-  
+    
   // main game loop
   while (1) {
     struct timespec frame_start, frame_end;
@@ -807,21 +946,6 @@ int main(void) {
     Input_processAllKeys();
 
     if (actions.quit) break;
-
-    // TODO: move into Tetramino_applyActions()
-    if (actions.drop_offset != 0 && !actions.hard_drop) {
-      // user dropped manually
-      clock_gettime(CLOCK_MONOTONIC, &timestamp_previous_drop);
-    } else {
-      //check if we should force a drop
-      clock_gettime(CLOCK_MONOTONIC, &timestamp_now);
-      struct timespec time_passed = timespecDifference(&timestamp_now, &timestamp_previous_drop);
-            
-      if (timespecGreaterThan(time_passed, force_drop_interval)) {
-        actions.drop_offset = 1;
-        clock_gettime(CLOCK_MONOTONIC, &timestamp_previous_drop);
-      }
-    }
     
     // erase previous tetramino from screen
     Tetramino_draw(&tet, px_eraser);
