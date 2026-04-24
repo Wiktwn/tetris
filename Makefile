@@ -15,7 +15,7 @@ OBJECTS   = $(SOURCES:.c=.o)
 TARGET    = tetris
 LIBRARIES = $(shell pkg-config --libs libcyaml)
 
-.PHONY: all clean dev release
+.PHONY: all clean dev release install
  
 all: dev release debug
 
@@ -30,6 +30,9 @@ release: $(TARGET)
 debug: CFLAGS += $(CFLAGS_DEBUG)
 debug: CFLAGS += $(CFLAGS_DEV)
 debug: $(TARGET)
+
+install:
+	cp -f tetris ~/../usr/bin/
 
 # Rule to link the executable
 $(TARGET): $(OBJECTS)

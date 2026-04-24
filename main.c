@@ -7,6 +7,7 @@
 #include <string.h>
 #include <time.h>
 #include <cyaml/cyaml.h>
+#include <math.h>
 #include "term.h"
 
 /*--- PREPROCESSOR MACROS ---*/
@@ -28,6 +29,7 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define INRANGE(low, n, high) ((low <= n) && (n < high))
 #define INPUT_BUFFERSIZE 50
+#define NANOPERSEC 1000000000
 
 // i dont like this very much
 #define screen_width  10
@@ -124,8 +126,12 @@ struct InputData input;
 
 struct timespec timestamp_previous_drop, timestamp_now;
 struct timespec force_drop_interval = {1, 0};
+struct timespec frame_total_duration = {0, 66666667};
+uint32_t level_gravities[15] = {30,25,21,18,15,13,11,9,8,7,6,5,4,3,2};
+
 uint32_t Game_score = 0;
 uint32_t Game_lines_cleared = 0;
+uint32_t Game_level = 0;
 uint32_t Game_flags = 0;
 uint32_t Game_highscore = 0;
 char     Game_highscore_usr[9];
@@ -696,6 +702,12 @@ void Screen_clearLine(uint32_t y) {
 
 void Game_updateScore(uint32_t nlines) {
   Game_lines_cleared += nlines;
+  Game_level = Game_lines_cleared / 10;
+
+  uint32_t gravity = level_gravities[Game_level];
+  double drop_time = (double)gravity / 30;
+  force_drop_interval.tv_sec = (uint64_t)drop_time;
+  force_drop_interval.tv_nsec = (uint64_t)(fmod(drop_time, 1) * NANOPERSEC);
 
   uint32_t scores[4] = {40, 100, 300, 1200};
   if (nlines == 0)
@@ -828,8 +840,8 @@ void ContextWindow_update(void) {
   ContextWindow_drawRow(row_buff, CW_elems.width);
 
   // draw lines cleared
-  ContextWindow_drawRow("[> CLEARS <]", CW_elems.width);
-  snprintf(row_buff, 13, "[>-%06d-<]", Game_lines_cleared);
+  ContextWindow_drawRow("[> LEVEL# <]", CW_elems.width);
+  snprintf(row_buff, 13, "[>-%06d-<]", Game_level);
   ContextWindow_drawRow(row_buff, CW_elems.width);
   ContextWindow_drawRow(CW_elems.blank, CW_elems.width);
   
@@ -878,11 +890,26 @@ void Game_setFlags(int argc, char *argv[]) {
 
 void Game_exit(void) {
   Terminal_restore();
+  struct GameSaveData save;
   
-  struct GameSaveData save = {
-    .highscore      = MAX(Game_score, Game_highscore),
-    .highscore_name = "Will",
-  };
+  if ( Game_score > Game_highscore) {
+    printf("Enter your name to save highscore (8 chars) => ");
+    fflush(stdout);
+    
+    char name[9];
+    scanf("%8s", name);
+    name[sizeof(name) - 1] = '\0'; // ensure null termination
+    
+    save = (struct GameSaveData){
+      .highscore = Game_score,
+      .highscore_name = name,
+    };
+  } else {
+    save = (struct GameSaveData){
+      .highscore = Game_highscore,
+      .highscore_name = Game_highscore_usr,
+    };
+  }
    
   cyaml_err_t err = cyaml_save_file(save_path, &cyaml_config, &GameSaveData_schema, &save, 0);
 
@@ -933,6 +960,8 @@ int main(int argc, char *argv[]) {
   Screen_init();
 
   // reset and randomize tetramino
+  if (!(Game_flags & FLAGS_NOBUCKET))
+    Tetramino_randomizeShapeBucket();
   Tetramino_randomize(&tetramino_next);
   Tetramino_respawn(&tet);
     
@@ -970,7 +999,6 @@ int main(int argc, char *argv[]) {
     struct timespec frame_time = timespecDifference(&frame_end, &frame_start);
 
     // sleep for ~66 ms (15 fps)
-    struct timespec frame_total_duration = {0, 66666667};
     struct timespec frame_remaining = timespecDifference(&frame_total_duration, &frame_time);
     nanosleep(&frame_remaining, NULL);
   }
