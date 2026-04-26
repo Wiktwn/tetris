@@ -127,7 +127,7 @@ struct InputData input;
 struct timespec timestamp_previous_drop, timestamp_now;
 struct timespec force_drop_interval = {1, 0};
 struct timespec frame_total_duration = {0, 66666667};
-uint32_t level_gravities[15] = {30,25,21,18,15,13,11,9,8,7,6,5,4,3,2};
+const uint32_t level_gravities[15] = {30,25,21,18,15,13,11,9,8,7,6,5,4,3,2};
 
 uint32_t Game_score = 0;
 uint32_t Game_lines_cleared = 0;
@@ -488,14 +488,29 @@ void Tetramino_attemptLateralMove(Tetramino *tet) {
 void Tetramino_respawn(Tetramino *tet);
 
 void Tetramino_applyActions(Tetramino *tet) {
-  // TODO: these rotations are not safe, make them safe retart!
+  // save the last valid state
+  Tetramino previous_state = *tet;
+
+  // convert negative rotations to positive
   if (actions.rotation_offset >= 0) {
     tet->rotation += (uint16_t)actions.rotation_offset;
   } else {
     tet->rotation += abs(actions.rotation_offset) * 3;
   }
 
-  // TODO: move into Tetramino_applyActions()
+  // truncate rotation to within range (0 & 3)
+  tet->rotation = tet->rotation % 4;
+
+  // check if rotation is valid
+  if (Tetramino_isColliding(tet)) {
+    // revert to previous state
+    tet->rotation = previous_state.rotation;
+  } else {
+    // solidify state
+    previous_state.rotation = tet->rotation;
+  }
+
+  // decide when to force the next drop
   if (actions.drop_offset != 0 && !actions.hard_drop) {
     // user dropped manually
     clock_gettime(CLOCK_MONOTONIC, &timestamp_previous_drop);
@@ -505,17 +520,12 @@ void Tetramino_applyActions(Tetramino *tet) {
     struct timespec time_passed = timespecDifference(&timestamp_now, &timestamp_previous_drop);
           
     if (timespecGreaterThan(time_passed, force_drop_interval)) {
+      // force a drop
       actions.drop_offset = 1;
       clock_gettime(CLOCK_MONOTONIC, &timestamp_previous_drop);
     }
   }
-
-  // tet->id = (tet->id + actions.id_offset) % 7;
-
-  // save the last valid state
-  Tetramino previous_state = *tet;
-
-  tet->rotation = tet->rotation % 4; // clamp between 0 and 3
+  
   // tet->y += actions.drop_offset;
 
   if (actions.hard_drop) {
