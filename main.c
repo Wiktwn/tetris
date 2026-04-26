@@ -38,6 +38,7 @@
 #define screen_real_width 20
 
 #define FLAGS_NOBUCKET 0x1
+#define FLAGS_CMDHELP  0x2
 
 /*--- STRUCTURES ---*/
 
@@ -764,6 +765,16 @@ void fatalError(const char *str) {
   exit(errno);
 }
 
+void Tetris_displayCommands(void) {
+  printf(
+    "Commands:\n"
+    "\t--nobucket: disables the\"bag\" based respawn system. My implementation uses a 5 piece bag; excluding mirrored piece\n"
+    "\t--help: display valid args\n"
+  );
+  
+  fflush(stdout);
+}
+
 void Tetris_initialize() {
   snprintf(save_path, sizeof(save_path), "%s/.tetris/save.yaml", getenv("HOME"));
   
@@ -894,24 +905,44 @@ void ContextWindow_update(void) {
 }
 
 void Game_setFlags(int argc, char *argv[]) {
-  char *valid_args[] = {
-    "--nobucket"
+  const char *valid_args[] = {
+    "--nobucket",
+    "--help"
   };
 
+  const uint32_t flags[] = {
+    FLAGS_NOBUCKET,
+    FLAGS_CMDHELP
+  };
+  
   for (int i = 1; i < argc; i++) {
     char *arg = argv[i];
     
     for (uint32_t j = 0; j < sizeof(valid_args) / sizeof(char *); j++) {
-      if (!strcmp(valid_args[j], arg))
+      if (strcmp(valid_args[j], arg) != 0)
         continue;
 
-      Game_flags |= FLAGS_NOBUCKET;
+      // set the correct flags
+      Game_flags |= flags[j];
     }
+  }
+
+  // Game_flags |= FLAGS_CMDHELP;
+  if (Game_flags & FLAGS_CMDHELP) {
+    Tetris_displayCommands();
+    exit(0);
   }
 }
 
+int Game_saveGame(void);
+
 void Game_exit(void) {
   Terminal_restore();
+  if (Game_saveGame())
+    fprintf(stderr, "Error saving game. Save location => %s\n", save_path);
+}
+
+int Game_saveGame(void) {
   struct GameSaveData save;
   
   if ( Game_score > Game_highscore) {
@@ -937,8 +968,10 @@ void Game_exit(void) {
 
   if (err != CYAML_OK) {
     fprintf(stderr, "Error writing save data: %s\n", cyaml_strerror(err));
-    exit(1);
+    return 1;
   }
+
+  return 0;
 }
 
 void Game_loadSave(void) {

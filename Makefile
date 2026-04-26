@@ -32,7 +32,7 @@ debug: CFLAGS += $(CFLAGS_DEV)
 debug: $(TARGET)
 
 install:
-	cp -f tetris ~/../usr/bin/
+	cp -f tetris /usr/bin/
 
 # Rule to link the executable
 $(TARGET): $(OBJECTS)
