@@ -121,8 +121,8 @@ const int16_t x_absolute_max = 1;
 
 // struct TetraminoData tetramino;
 struct TetraminoData tetramino_next = {LINE, DEG_0, 0, 0};
-struct ActionData actions;
-struct InputData input;
+struct ActionData actions = {0};
+struct InputData input = {0};
 
 struct timespec timestamp_previous_drop, timestamp_now;
 struct timespec force_drop_interval = {1, 0};
@@ -407,7 +407,6 @@ void Input_processAllKeys(void) {
   actions.rotation_offset = 0;
   actions.drop_offset = 0;
   actions.x_offset = 0;
-  // actions.id_offset = 0;
   actions.hard_drop = 0;
 
   for (uint16_t i = 0; i < input.length; i++) {
@@ -624,6 +623,19 @@ void Tetramino_respawn(Tetramino *tet) {
   tet->id = tetramino_next.id;
   tet->rotation = tetramino_next.rotation;
   Tetramino_gotoSpawn(tet);
+
+  // if there is a occupied square directly beneath the top of the screne
+  // that can collide with the tetramino immediately then we quit
+  // its also possible that a good quit condition would be to check if
+  // a fallen tetramino is outside of the screen's bounds
+  uint32_t respawn_y = tet->y++;
+  if (Tetramino_isColliding(tet)) {
+    // queue up a quit action
+    actions.quit = true;
+  } else {
+    // reset tet back to correct position
+    tet->y = respawn_y;
+  }
 
   Tetramino_randomize(&tetramino_next);
   ContextWindow_drawTetramino(&tetramino_next);
