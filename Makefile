@@ -2,7 +2,7 @@
 CC = gcc
 
 # common flags
-CFLAGS = -Wall -Wextra $(shell pkg-config --cflags libcyaml)
+CFLAGS = -Wall -Wextra
 
 # build specific flags
 CFLAGS_DEV   = -O0 -Wpointer-arith -Wshadow -Wfloat-equal -Werror
@@ -13,9 +13,9 @@ CFLAGS_DEBUG = -g
 SOURCES   = main.c term.c
 OBJECTS   = $(SOURCES:.c=.o)
 TARGET    = tetris
-LIBRARIES = $(shell pkg-config --libs libcyaml)
+LIBRARIES = -L./packages/lib -Wl,-rpath,./packages/lib -lcyaml -lyaml-0
 
-.PHONY: all clean dev release install
+.PHONY: all clean dev release install install-dep
  
 all: dev release debug
 
@@ -40,7 +40,9 @@ $(TARGET): $(OBJECTS)
 	
 # Generic compilation rule
 %.o: %.c
+	# make directory for save file
 	@mkdir -p ~/.tetris/
+	# compile executable
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Rule to clean up generated files

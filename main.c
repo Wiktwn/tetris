@@ -84,13 +84,16 @@ struct TetraminoShapeGroup {
   uint32_t nshapes;
 };
 
+/*
 struct GameSaveData {
   uint32_t highscore;
   char    *highscore_name;
 };
+*/
 
 /*--- CYAML COFNIG ---*/
 
+/*
 static const cyaml_schema_field_t GameSaveData_fields_schema[] = {
   CYAML_FIELD_UINT("highscore", CYAML_FLAG_DEFAULT, struct GameSaveData, highscore),
   CYAML_FIELD_STRING_PTR("highscore_name", CYAML_FLAG_POINTER, struct GameSaveData, highscore_name, 0, CYAML_UNLIMITED),
@@ -106,6 +109,7 @@ static const cyaml_config_t cyaml_config = {
   .log_fn = cyaml_log,
   .mem_fn = cyaml_mem,
 };
+*/
 
 /*--- DATA ---*/
 
@@ -135,7 +139,7 @@ uint32_t Game_lines_cleared = 0;
 uint32_t Game_level = 0;
 uint32_t Game_flags = 0;
 uint32_t Game_highscore = 0;
-char     Game_highscore_usr[9];
+uint8_t  Game_highscore_usr[9];
 
 uint16_t tetramino_shapes[4 * 7] = {
   // line
@@ -260,7 +264,7 @@ int timespecGreaterThan(struct timespec t1, struct timespec t2);
 struct timespec timespecDifference(const struct timespec *t1, const struct timespec *t0);
 void ContextWindow_drawTetramino(Tetramino *tet);
 void Tetramino_randomizeShapeBucket(void);
-void Game_loadSave(void);
+int Game_loadSave(void);
 
 void Tetramino_initializeShapeGroups(void) {
   enum GroupIds {
@@ -776,7 +780,7 @@ void Tetris_displayCommands(void) {
 }
 
 void Tetris_initialize() {
-  snprintf(save_path, sizeof(save_path), "%s/.tetris/save.yaml", getenv("HOME"));
+  snprintf(save_path, sizeof(save_path), "%s/.tetris/save.vwe", getenv("HOME"));
   
   Terminal_saveState();
   Terminal_setRaw();
@@ -892,7 +896,7 @@ void ContextWindow_update(void) {
   // draw highscore info
   ContextWindow_drawRow(CW_elems.blank, CW_elems.width);
   ContextWindow_drawRow("[>TOPSCORE<]", CW_elems.width);
-  snprintf(row_buff, 13, "[>%8.8s<]", Game_highscore_usr);
+  snprintf(row_buff, 13, "[>%8.8s<]", (char *)Game_highscore_usr);
   ContextWindow_drawRow(row_buff, CW_elems.width);
   snprintf(row_buff, 13, "[>-%06d-<]", Game_highscore);
   ContextWindow_drawRow(row_buff, CW_elems.width);
@@ -919,8 +923,12 @@ void Game_setFlags(int argc, char *argv[]) {
     char *arg = argv[i];
     
     for (uint32_t j = 0; j < sizeof(valid_args) / sizeof(char *); j++) {
-      if (strcmp(valid_args[j], arg) != 0)
-        continue;
+      if (strcmp(valid_args[j], arg) != 0) {
+        // say that args are invalid, and which ones.
+        fprintf(stderr, "Unrecogized argument: %s\n", arg);
+        // print argument help message
+        Game_flags |= FLAGS_CMDHELP;
+      }
 
       // set the correct flags
       Game_flags |= flags[j];
@@ -942,57 +950,73 @@ void Game_exit(void) {
     fprintf(stderr, "Error saving game. Save location => %s\n", save_path);
 }
 
+void writeSaveChunk(uint8_t width, uint8_t *data, FILE *stream) {
+  fwrite(&width, sizeof(uint8_t), 1,     stream);
+  fwrite( data,  sizeof(uint8_t), width, stream);
+}
+
+
+uint8_t readSaveChunk(uint8_t **data, FILE *stream) {
+  // read width byte
+  uint8_t width = 0;
+  fread(&width, sizeof(uint8_t), 1, stream);
+
+  // read data bytes
+  *data = malloc(sizeof(uint8_t) * width);
+  fread(*data, sizeof(uint8_t), width, stream);
+
+  return width;
+}
+
 int Game_saveGame(void) {
-  struct GameSaveData save;
-  
-  if ( Game_score > Game_highscore) {
+  if (Game_score > Game_highscore) {
+    FILE *savef = fopen(save_path, "w");
+    if (savef == NULL)
+      return 1;
+
     printf("Enter your name to save highscore (8 chars) => ");
     fflush(stdout);
     
-    char name[9];
+    uint8_t name[9];
     scanf("%8s", name);
     name[sizeof(name) - 1] = '\0'; // ensure null termination
-    
-    save = (struct GameSaveData){
-      .highscore = Game_score,
-      .highscore_name = name,
-    };
-  } else {
-    save = (struct GameSaveData){
-      .highscore = Game_highscore,
-      .highscore_name = Game_highscore_usr,
-    };
-  }
-   
-  cyaml_err_t err = cyaml_save_file(save_path, &cyaml_config, &GameSaveData_schema, &save, 0);
 
-  if (err != CYAML_OK) {
-    fprintf(stderr, "Error writing save data: %s\n", cyaml_strerror(err));
-    return 1;
+    // write name
+    writeSaveChunk(sizeof(uint8_t) * 9, name, savef);
+    // write highscore
+    writeSaveChunk(sizeof(uint32_t), (uint8_t*)&Game_score, savef);
+
+    fclose(savef);
   }
 
   return 0;
 }
 
-void Game_loadSave(void) {
-  struct GameSaveData *save;
+int Game_loadSave(void) {
+  // uint8_t  highscore_usr[9];
+  // uint32_t highscore_val;
 
-  cyaml_err_t err = cyaml_load_file(save_path, &cyaml_config, &GameSaveData_schema, (cyaml_data_t **)(&save), NULL);
+  FILE *savef = fopen(save_path, "r");
+  if (savef == NULL)
+    return 1;
 
-  if (err != CYAML_OK) {
-    fprintf(stderr, "Error reading save data: %s\n", cyaml_strerror(err));
-    *save = (struct GameSaveData){0, "ERR"};
-    exit(1);
-  }
+  uint8_t *name  = NULL;
+  uint8_t *score = NULL;
 
-  Game_highscore = save->highscore;
-  strncpy(Game_highscore_usr, save->highscore_name, 8);
-  Game_highscore_usr[sizeof(Game_highscore_usr) - 1] = '\0'; // ensure null terminator
+  readSaveChunk(&name, savef);
+  readSaveChunk(&score, savef); // jesus christ
 
-  err = cyaml_free(&cyaml_config, &GameSaveData_schema, save, 0);
-  if (err != CYAML_OK) {
-    fprintf(stderr, "Error freeing save data: %s\n", cyaml_strerror(err));
-  }
+  // FILE *logf = fopen("log.txt", "w");
+
+  
+
+  // fprintf(logf, "name = %s\n", (char *)name);  
+  // fprintf(logf, "score = %u", *(uint32_t *)score);
+
+  fclose(savef);
+  // fclose(logf);
+  free(name);
+  return 0;
 }
 
 int main(int argc, char *argv[]) {
