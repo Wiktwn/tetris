@@ -6,9 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <cyaml/cyaml.h>
 #include <math.h>
+
 #include "term.h"
+#include "string.h"
 
 /*--- PREPROCESSOR MACROS ---*/
 
@@ -28,6 +29,9 @@
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define INRANGE(low, n, high) ((low <= n) && (n < high))
+#define true 1
+#define false 0
+
 #define INPUT_BUFFERSIZE 50
 #define NANOPERSEC 1000000000
 
@@ -83,33 +87,6 @@ struct TetraminoShapeGroup {
   uint16_t offset;
   uint32_t nshapes;
 };
-
-/*
-struct GameSaveData {
-  uint32_t highscore;
-  char    *highscore_name;
-};
-*/
-
-/*--- CYAML COFNIG ---*/
-
-/*
-static const cyaml_schema_field_t GameSaveData_fields_schema[] = {
-  CYAML_FIELD_UINT("highscore", CYAML_FLAG_DEFAULT, struct GameSaveData, highscore),
-  CYAML_FIELD_STRING_PTR("highscore_name", CYAML_FLAG_POINTER, struct GameSaveData, highscore_name, 0, CYAML_UNLIMITED),
-  CYAML_FIELD_END
-};
-
-static const cyaml_schema_value_t GameSaveData_schema = {
-  CYAML_VALUE_MAPPING(CYAML_FLAG_POINTER, struct GameSaveData, GameSaveData_fields_schema),
-};
-
-static const cyaml_config_t cyaml_config = {
-  .log_level = CYAML_LOG_WARNING,
-  .log_fn = cyaml_log,
-  .mem_fn = cyaml_mem,
-};
-*/
 
 /*--- DATA ---*/
 
@@ -737,9 +714,8 @@ void Game_updateScore(uint32_t nlines) {
   force_drop_interval.tv_nsec = (uint64_t)(fmod(drop_time, 1) * NANOPERSEC);
 
   uint32_t scores[4] = {40, 100, 300, 1200};
-  if (nlines == 0)
-    return;
-  Game_score += scores[MIN(nlines - 1, 3)];
+  if (nlines != 0)
+    Game_score += scores[MIN(nlines - 1, 3)];
 }
 
 
@@ -896,7 +872,15 @@ void ContextWindow_update(void) {
   // draw highscore info
   ContextWindow_drawRow(CW_elems.blank, CW_elems.width);
   ContextWindow_drawRow("[>TOPSCORE<]", CW_elems.width);
-  snprintf(row_buff, 13, "[>%8.8s<]", (char *)Game_highscore_usr);
+
+  size_t usr_len = MAX(MIN(strlen((char *)Game_highscore_usr), 8), 0);
+  char   usr_centered[9];
+  size_t n_leftpad = (8 - usr_len) / 2;
+
+  memset(usr_centered, (int)' ', n_leftpad);
+  strcpy(usr_centered + n_leftpad, (char *)Game_highscore_usr);
+  snprintf(row_buff, 13, "[>%-8.8s<]", usr_centered);
+
   ContextWindow_drawRow(row_buff, CW_elems.width);
   snprintf(row_buff, 13, "[>-%06d-<]", Game_highscore);
   ContextWindow_drawRow(row_buff, CW_elems.width);

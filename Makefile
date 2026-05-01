@@ -13,7 +13,7 @@ CFLAGS_DEBUG = -g
 SOURCES   = main.c term.c
 OBJECTS   = $(SOURCES:.c=.o)
 TARGET    = tetris
-LIBRARIES = -lm
+LIBRARIES = -lm  
 
 .PHONY: all clean dev release install install-dep
  
