@@ -13,7 +13,7 @@ CFLAGS_DEBUG = -g
 SOURCES   = main.c term.c
 OBJECTS   = $(SOURCES:.c=.o)
 TARGET    = tetris
-LIBRARIES = -L./packages/lib -Wl,-rpath,./packages/lib -lcyaml -lyaml-0
+LIBRARIES = -lm
 
 .PHONY: all clean dev release install install-dep
  
@@ -41,8 +41,8 @@ $(TARGET): $(OBJECTS)
 # Generic compilation rule
 %.o: %.c
 	# make directory for save file
-	@mkdir -p ~/.tetris/
-	# compile executable
+	mkdir -p ~/.tetris/
+	# compile object files
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Rule to clean up generated files

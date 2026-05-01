@@ -1,2 +1,3 @@
-name = test
-score = 40
+width = 9
+name = 'wiktwn'
+score = #80

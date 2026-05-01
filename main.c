@@ -982,7 +982,7 @@ int Game_saveGame(void) {
     name[sizeof(name) - 1] = '\0'; // ensure null termination
 
     // write name
-    writeSaveChunk(sizeof(uint8_t) * 9, name, savef);
+    writeSaveChunk(sizeof(name), name, savef);
     // write highscore
     writeSaveChunk(sizeof(uint32_t), (uint8_t*)&Game_score, savef);
 
@@ -1004,17 +1004,12 @@ int Game_loadSave(void) {
   uint8_t *score = NULL;
 
   readSaveChunk(&name, savef);
-  readSaveChunk(&score, savef); // jesus christ
-
-  // FILE *logf = fopen("log.txt", "w");
-
+  readSaveChunk(&score, savef);
   
-
-  // fprintf(logf, "name = %s\n", (char *)name);  
-  // fprintf(logf, "score = %u", *(uint32_t *)score);
+  strncpy((char *)Game_highscore_usr, (char *)name, 8);
+  Game_highscore = *(uint32_t *)score;
 
   fclose(savef);
-  // fclose(logf);
   free(name);
   return 0;
 }
