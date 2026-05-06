@@ -13,7 +13,19 @@ CFLAGS_DEBUG = -g
 SOURCES   = main.c term.c
 OBJECTS   = $(SOURCES:.c=.o)
 TARGET    = tetris
-LIBRARIES = -lm  
+LIBRARIES = -lm
+
+# HOME_PATH =
+REMOVE_CMD = 
+ifeq ($(OS),Windows_NT)
+	REMOVE_CMD := del
+	# HOME_PATH  := -Force $(USERPROFILE)/Desktop
+else
+	REMOVE_CMD := rm -f
+	# HOME_PATH  := -p ~
+endif
+
+# HOME_PATH_NORM = $(subst \,/,$(HOME_PATH))
 
 .PHONY: all clean dev release install install-dep
  
@@ -39,19 +51,9 @@ $(TARGET): $(OBJECTS)
 	$(CC) $(OBJECTS) -o $(TARGET) $(LIBRARIES)
 	
 # Generic compilation rule
+# mkdir $(HOME_PATH_NORM)/.tetris/
 %.o: %.c
-	# make directory for save file
-	mkdir -p ~/.tetris/
-	# compile object files
 	$(CC) $(CFLAGS) -c $< -o $@
-
-# Rule to clean up generated files
-REMOVE_CMD = 
-ifeq ($(OS),Windows_NT)
-	REMOVE_CMD := del
-else
-	REMOVE_CMD := rm -f
-endif
 
 clean:
 	$(REMOVE_CMD) $(OBJECTS) $(TARGET)
